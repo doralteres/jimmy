@@ -83,7 +83,7 @@ jobs:
       uses: softprops/action-gh-release@v1
       with:
         tag_name: ${{ steps.version.outputs.tag }}
-        name: Release ${{ steps.version.outputs.version }}
+        name: Jimmy-${{ steps.version.outputs.version }}
         body: |
           ## Jimmy VST3 - Version ${{ steps.version.outputs.version }}
           
