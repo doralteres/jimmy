@@ -20,6 +20,11 @@ This project uses GitHub Actions for continuous integration and deployment.
 
 **Purpose:** Builds the plugin, bumps the version, and creates a GitHub release
 
+**Skip CI:** To skip the release workflow, start your commit message with `[skip-ci]`:
+```bash
+git commit -m "[skip-ci] Update documentation"
+```
+
 **Steps:**
 1. Checkout code with submodules
 2. Install CMake

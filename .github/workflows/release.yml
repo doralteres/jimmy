@@ -8,6 +8,7 @@ jobs:
   build-and-release:
     name: Build, Version Bump, and Release
     runs-on: macos-latest
+    if: "!startsWith(github.event.head_commit.message, '[skip-ci]')"
     
     permissions:
       contents: write
@@ -52,7 +53,7 @@ jobs:
         git config user.name "github-actions[bot]"
         git config user.email "github-actions[bot]@users.noreply.github.com"
         git add CMakeLists.txt
-        git commit -m "chore: bump version to ${{ steps.version.outputs.version }}" || echo "No changes to commit"
+        git commit -m "[skip-ci] chore: bump version to ${{ steps.version.outputs.version }}" || echo "No changes to commit"
         git push || echo "Nothing to push"
     
     - name: Configure CMake
