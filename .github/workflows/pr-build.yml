@@ -1,0 +1,38 @@
+name: PR Build
+
+on:
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    name: Build VST3
+    runs-on: macos-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+    
+    - name: Install dependencies
+      run: |
+        brew install cmake
+    
+    - name: Configure CMake
+      run: |
+        cmake -B build -DCMAKE_BUILD_TYPE=Release
+    
+    - name: Build
+      run: |
+        cmake --build build --config Release -j$(sysctl -n hw.ncpu)
+    
+    - name: Verify VST3 artifact
+      run: |
+        if [ -d "build/Jimmy_artefacts/Release/VST3/Jimmy.vst3" ]; then
+          echo "✅ VST3 build successful"
+          ls -la build/Jimmy_artefacts/Release/VST3/
+        else
+          echo "❌ VST3 build failed - artifact not found"
+          exit 1
+        fi

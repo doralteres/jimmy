@@ -1,0 +1,103 @@
+name: Build and Release
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  build-and-release:
+    name: Build, Version Bump, and Release
+    runs-on: macos-latest
+    
+    permissions:
+      contents: write
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+        token: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Install dependencies
+      run: |
+        brew install cmake
+    
+    - name: Bump version
+      id: version
+      run: |
+        # Read current version from CMakeLists.txt
+        CURRENT_VERSION=$(grep -oP 'project\(Jimmy VERSION \K[0-9]+\.[0-9]+\.[0-9]+' CMakeLists.txt || grep -oE 'project\(Jimmy VERSION [0-9]+\.[0-9]+\.[0-9]+' CMakeLists.txt | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
+        echo "Current version: $CURRENT_VERSION"
+        
+        # Split version into parts
+        MAJOR=$(echo $CURRENT_VERSION | cut -d. -f1)
+        MINOR=$(echo $CURRENT_VERSION | cut -d. -f2)
+        PATCH=$(echo $CURRENT_VERSION | cut -d. -f3)
+        
+        # Bump minor version
+        NEW_MINOR=$((MINOR + 1))
+        NEW_VERSION="${MAJOR}.${NEW_MINOR}.0"
+        echo "New version: $NEW_VERSION"
+        
+        # Update CMakeLists.txt
+        sed -i '' "s/project(Jimmy VERSION ${CURRENT_VERSION}/project(Jimmy VERSION ${NEW_VERSION}/" CMakeLists.txt
+        
+        # Output for later steps
+        echo "version=${NEW_VERSION}" >> $GITHUB_OUTPUT
+        echo "tag=v${NEW_VERSION}" >> $GITHUB_OUTPUT
+    
+    - name: Commit version bump
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        git add CMakeLists.txt
+        git commit -m "chore: bump version to ${{ steps.version.outputs.version }}" || echo "No changes to commit"
+        git push || echo "Nothing to push"
+    
+    - name: Configure CMake
+      run: |
+        cmake -B build -DCMAKE_BUILD_TYPE=Release
+    
+    - name: Build
+      run: |
+        cmake --build build --config Release -j$(sysctl -n hw.ncpu)
+    
+    - name: Verify VST3 artifact
+      run: |
+        if [ -d "build/Jimmy_artefacts/Release/VST3/Jimmy.vst3" ]; then
+          echo "✅ VST3 build successful"
+          ls -la build/Jimmy_artefacts/Release/VST3/
+        else
+          echo "❌ VST3 build failed - artifact not found"
+          exit 1
+        fi
+    
+    - name: Package VST3
+      run: |
+        cd build/Jimmy_artefacts/Release/VST3
+        zip -r Jimmy-${{ steps.version.outputs.version }}-macOS.zip Jimmy.vst3
+        mv Jimmy-${{ steps.version.outputs.version }}-macOS.zip ${{ github.workspace }}/
+    
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: ${{ steps.version.outputs.tag }}
+        name: Release ${{ steps.version.outputs.version }}
+        body: |
+          ## Jimmy VST3 - Version ${{ steps.version.outputs.version }}
+          
+          ### Installation
+          1. Download the `Jimmy-${{ steps.version.outputs.version }}-macOS.zip` file
+          2. Extract the `Jimmy.vst3` bundle
+          3. Copy it to your VST3 folder:
+             - macOS: `~/Library/Audio/Plug-Ins/VST3/`
+          
+          ### Changes
+          Auto-generated release from commit ${{ github.sha }}
+        files: |
+          Jimmy-${{ steps.version.outputs.version }}-macOS.zip
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
