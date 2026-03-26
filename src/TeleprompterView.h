@@ -62,6 +62,8 @@ public:
         float sectionHeight = fontSize * 1.1f;
         float lineSpacing = lineHeight * 0.4f;
         int viewHeight = getHeight();
+        float contentWidth = (float)getWidth() - 40.0f;
+        float margin = 20.0f;
 
         int currentLineIndex = findCurrentLine();
 
@@ -90,7 +92,7 @@ public:
                     g.setColour(sectionColour);
                     g.setFont(juce::Font(juce::FontOptions(fontSize * 0.65f)));
 
-                    auto sectionBounds = juce::Rectangle<float>(20.0f, y, (float)getWidth() - 40.0f, sectionHeight);
+                    auto sectionBounds = juce::Rectangle<float>(margin, y, contentWidth, sectionHeight);
                     g.drawText(sec.name.toUpperCase(), sectionBounds, juce::Justification::centredLeft);
                 }
                 y += sectionHeight + 4.0f;
@@ -105,19 +107,69 @@ public:
             else
                 alpha = 0.4f;
 
-            // Draw chord above the lyric line
-            auto chordStr = getChordForBar(line.startBar);
-            if (chordStr.isNotEmpty() && y + chordHeight > 0 && y < viewHeight)
+            // Draw all chords for this lyric line at proportional X positions
+            if (y + chordHeight > 0 && y < viewHeight)
             {
-                g.setColour(juce::Colour(Theme::kChordColour).withAlpha(alpha));
+                auto lineChords = getChordsForLine(line.startBar, line.endBar);
+                bool rtl = isRtlText(line.text);
+                double lineSpan = line.endBar - line.startBar;
+
                 g.setFont(juce::Font(juce::FontOptions(fontSize * 0.75f)));
 
-                auto chordBounds = juce::Rectangle<float>(20.0f, y, (float)getWidth() - 40.0f, chordHeight);
+                float lastChordRight = rtl ? (float)getWidth() + 1.0f : -1.0f;
 
-                if (isRtlText(line.text))
-                    g.drawText(chordStr, chordBounds, juce::Justification::centredRight);
-                else
-                    g.drawText(chordStr, chordBounds, juce::Justification::centredLeft);
+                for (const auto& lc : lineChords)
+                {
+                    // Proportional X within the line's bar range
+                    float xFraction = (lineSpan > 0.001)
+                        ? static_cast<float>((lc.barPosition - line.startBar) / lineSpan)
+                        : 0.0f;
+                    xFraction = juce::jlimit(0.0f, 1.0f, xFraction);
+                    if (rtl)
+                        xFraction = 1.0f - xFraction;
+
+                    float chordX = margin + xFraction * contentWidth;
+                    float chordW = contentWidth * 0.25f; // max width per chord label
+
+                    // Skip if overlapping previous chord
+                    if (rtl)
+                    {
+                        if (chordX + chordW > lastChordRight && lastChordRight < (float)getWidth())
+                            continue;
+                    }
+                    else
+                    {
+                        if (chordX < lastChordRight)
+                            continue;
+                    }
+
+                    // Active chord (currently playing) is brighter
+                    bool isActive = (lc.barPosition <= currentBarPos);
+
+                    if (isActive)
+                        g.setColour(juce::Colour(Theme::kChordColour).withAlpha(alpha));
+                    else
+                        g.setColour(juce::Colour(Theme::kChordDimColour).withAlpha(alpha * 0.85f));
+
+                    auto chordBounds = juce::Rectangle<float>(chordX, y, chordW, chordHeight);
+                    if (rtl)
+                    {
+                        // Right-align chord text within its bounds
+                        float rightEdge = margin + contentWidth - xFraction * contentWidth;
+                        chordBounds = juce::Rectangle<float>(rightEdge - chordW, y, chordW, chordHeight);
+                        g.drawText(lc.name, chordBounds, juce::Justification::centredRight);
+                        lastChordRight = chordBounds.getX();
+                    }
+                    else
+                    {
+                        g.drawText(lc.name, chordBounds, juce::Justification::centredLeft);
+
+                        // Estimate text width for overlap detection
+                        juce::GlyphArrangement glyphs;
+                        glyphs.addLineOfText(g.getCurrentFont(), lc.name, 0.0f, 0.0f);
+                        lastChordRight = chordX + glyphs.getBoundingBox(0, -1, true).getWidth() + 8.0f;
+                    }
+                }
             }
             y += chordHeight;
 
@@ -130,14 +182,12 @@ public:
                 // Highlight current line
                 if (i == currentLineIndex)
                 {
-                    g.setColour(juce::Colour(Theme::kTextPrimary));
-                    // Subtle highlight bar
                     g.setColour(juce::Colour(Theme::kAccent).withAlpha(0.08f));
                     g.fillRect(0.0f, y, (float)getWidth(), lineHeight);
                     g.setColour(juce::Colour(Theme::kTextPrimary));
                 }
 
-                auto textBounds = juce::Rectangle<float>(20.0f, y, (float)getWidth() - 40.0f, lineHeight);
+                auto textBounds = juce::Rectangle<float>(margin, y, contentWidth, lineHeight);
 
                 if (isRtlText(line.text))
                     g.drawText(line.text, textBounds, juce::Justification::centredRight);
@@ -201,16 +251,41 @@ private:
             targetScrollY = 0.0f;
     }
 
-    juce::String getChordForBar(double barPos) const
+    // Returns all chords relevant to a lyric line's bar range.
+    // Includes the carry-over chord (last chord before lineStart) plus
+    // all chords within [lineStart, lineEnd).
+    std::vector<Chord> getChordsForLine(double lineStart, double lineEnd) const
     {
-        juce::String result;
+        std::vector<Chord> result;
+
+        // Find carry-over chord: last chord before this line starts
+        const Chord* carryOver = nullptr;
         for (const auto& c : currentChords)
         {
-            if (c.barPosition <= barPos)
-                result = c.name;
+            if (c.barPosition < lineStart)
+                carryOver = &c;
             else
                 break;
         }
+
+        if (carryOver != nullptr)
+            result.push_back({ carryOver->name, lineStart, carryOver->source });
+
+        // Collect all chords within the line's bar range
+        for (const auto& c : currentChords)
+        {
+            if (c.barPosition >= lineStart && c.barPosition < lineEnd)
+            {
+                // Avoid duplicate if carry-over chord is at exactly lineStart
+                if (!result.empty() && std::abs(result.back().barPosition - c.barPosition) < 0.01
+                    && result.back().name == c.name)
+                    continue;
+                result.push_back(c);
+            }
+            else if (c.barPosition >= lineEnd)
+                break;
+        }
+
         return result;
     }
 

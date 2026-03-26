@@ -61,3 +61,58 @@ struct MidiNoteState
         return notes;
     }
 };
+
+// Lock-free SPSC FIFO for chord events (audio thread -> UI thread).
+// Audio thread pushes detected chords; UI thread drains them into SongModel.
+struct ChordEvent
+{
+    double barPosition = 0.0;
+    char   name[32] {};          // fixed-size to avoid allocations
+
+    void setName(const juce::String& s)
+    {
+        auto utf8 = s.toRawUTF8();
+        auto len = std::min(s.getNumBytesAsUTF8(), (size_t)31);
+        std::memcpy(name, utf8, len);
+        name[len] = '\0';
+    }
+
+    juce::String getName() const { return juce::String::fromUTF8(name); }
+};
+
+struct ChordEventFifo
+{
+    static constexpr int kCapacity = 256;
+
+    bool push(double barPos, const juce::String& chordName)
+    {
+        auto w = writePos.load(std::memory_order_relaxed);
+        auto r = readPos.load(std::memory_order_acquire);
+
+        if (((w + 1) % kCapacity) == r)
+            return false;  // full
+
+        buffer[static_cast<size_t>(w)].barPosition = barPos;
+        buffer[static_cast<size_t>(w)].setName(chordName);
+        writePos.store((w + 1) % kCapacity, std::memory_order_release);
+        return true;
+    }
+
+    bool pop(ChordEvent& out)
+    {
+        auto r = readPos.load(std::memory_order_relaxed);
+        auto w = writePos.load(std::memory_order_acquire);
+
+        if (r == w)
+            return false;  // empty
+
+        out = buffer[static_cast<size_t>(r)];
+        readPos.store((r + 1) % kCapacity, std::memory_order_release);
+        return true;
+    }
+
+private:
+    std::array<ChordEvent, kCapacity> buffer {};
+    std::atomic<int> readPos  { 0 };
+    std::atomic<int> writePos { 0 };
+};

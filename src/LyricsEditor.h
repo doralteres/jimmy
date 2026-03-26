@@ -36,6 +36,13 @@ public:
         autoDistBtn.onClick = [this] { autoDistribute(); };
         addAndMakeVisible(autoDistBtn);
 
+        // Clear MIDI chords button
+        clearChordsBtn.setButtonText("Clear MIDI Chords");
+        clearChordsBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xfff44336));
+        clearChordsBtn.setColour(juce::TextButton::textColourOnId, juce::Colours::white);
+        clearChordsBtn.onClick = [this] { songModel.clearMidiChords(); };
+        addAndMakeVisible(clearChordsBtn);
+
         // Bar mapping table
         addAndMakeVisible(mappingTable);
         mappingTable.setModel(this);
@@ -63,6 +70,8 @@ public:
         parseBtn.setBounds(btnRow.removeFromLeft(120));
         btnRow.removeFromLeft(8);
         autoDistBtn.setBounds(btnRow.removeFromLeft(140));
+        btnRow.removeFromLeft(8);
+        clearChordsBtn.setBounds(btnRow.removeFromLeft(150));
 
         area.removeFromTop(4);
         mappingTable.setBounds(area.reduced(2));
@@ -344,6 +353,7 @@ private:
     juce::TextEditor bulkEditor;
     juce::TextButton parseBtn;
     juce::TextButton autoDistBtn;
+    juce::TextButton clearChordsBtn;
     juce::TableListBox mappingTable { "Lyrics Mapping" };
     std::vector<LyricLine> cachedLyrics;
 

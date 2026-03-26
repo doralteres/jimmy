@@ -23,7 +23,27 @@ Jimmy receives chords via MIDI. To use it with Cubase's chord track:
 2. Go to **chord track inspector** and set it to send MIDI to the Jimmy instrument track
 3. Alternatively, use the **Chord Pad** or **Chord Events → MIDI** export to send MIDI notes to Jimmy's track
 
-When Jimmy receives MIDI notes, it will automatically identify the chord (major, minor, 7th, dim, aug, sus, etc.) and display it.
+When Jimmy receives MIDI notes, it will automatically identify the chord (major, minor, 7th, dim, aug, sus, etc.) and display it. Chords detected during playback are recorded at their bar positions and persist when you stop.
+
+### 2b. Import chords from MIDI (recommended)
+
+Instead of relying only on live playback capture, you can import all chords at once by dragging a MIDI file onto Jimmy's window:
+
+1. In Cubase, go to **Project → Chord Track → Chords to MIDI** to convert your chord track into a MIDI part
+2. **Drag the MIDI part** from the Cubase arrangement directly onto Jimmy's plugin window
+3. Alternatively, export a `.mid` file and drag that file onto the window
+
+Jimmy will parse all the MIDI notes, identify the chords, and place them at their correct bar positions on the timeline. A toast message will confirm how many chords were imported.
+
+**Tip:** Use the **Clear MIDI Chords** button in Edit mode (Lyrics tab) to remove imported/captured chords before re-importing.
+
+### 2c. Chord display in Live Mode
+
+In Live Mode, **all chords** are shown above each lyric line at their proportional position within the line's bar range. This means:
+
+- If a lyric line spans bars 5–9 and has chord changes at bars 5, 7, and 8, all three chords appear above the line at roughly 0%, 50%, and 75% of the line width
+- The **currently active chord** (the one playing right now) is displayed brighter than upcoming chords
+- A carry-over chord from the previous line is shown at the start of each line
 
 ### 3. Using sections (optional)
 

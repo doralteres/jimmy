@@ -16,6 +16,7 @@ namespace Theme
     // Accents
     inline constexpr uint32_t kAccent        = 0xff00bcd4;
     inline constexpr uint32_t kChordColour   = 0xff00e5ff;
+    inline constexpr uint32_t kChordDimColour = 0xff5ec4d4;  // dimmed upcoming chord
 
     // Status
     inline constexpr uint32_t kPlayingGreen  = 0xff4caf50;

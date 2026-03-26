@@ -110,9 +110,9 @@ void JimmyProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBu
                 currentDetectedChord = result.name;
                 currentChordHash.fetch_add(1, std::memory_order_relaxed);
 
-                // Record chord on the timeline at current bar position
+                // Push chord event to lock-free FIFO (drained by UI thread)
                 double barPos = static_cast<double>(transportState.barCount.load(std::memory_order_relaxed)) + 1.0;
-                songModel.setMidiChordAt(barPos, result.name);
+                chordEventFifo.push(barPos, result.name);
             }
         }
     }

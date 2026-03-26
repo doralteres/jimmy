@@ -118,6 +118,15 @@ void JimmyEditor::timerCallback()
     displayHeldNotes   = processorRef.midiNoteState.getHeldNotes();
     displayCurrentChord = processorRef.currentDetectedChord;
 
+    // Drain chord events from the lock-free FIFO into SongModel (UI thread safe)
+    ChordEvent chordEvt;
+    while (processorRef.chordEventFifo.pop(chordEvt))
+        processorRef.songModel.setMidiChordAt(chordEvt.barPosition, chordEvt.getName());
+
+    // Import toast countdown
+    if (importToastCountdown > 0)
+        --importToastCountdown;
+
     double currentBar = static_cast<double>(displayBarCount) + 1.0;
     displayCurrentSection = processorRef.songModel.getSectionAt(currentBar);
 
@@ -147,6 +156,21 @@ void JimmyEditor::paint(juce::Graphics& g)
     {
         // Teleprompter component handles live mode rendering
     }
+
+    // Import feedback toast
+    if (importToastCountdown > 0 && importToastMessage.isNotEmpty())
+    {
+        auto toastBounds = getLocalBounds().removeFromBottom(50).reduced(40, 8);
+        g.setColour(juce::Colour(0xcc333333));
+        g.fillRoundedRectangle(toastBounds.toFloat(), 6.0f);
+        g.setColour(juce::Colours::white);
+        g.setFont(juce::Font(juce::FontOptions(14.0f)));
+        g.drawText(importToastMessage, toastBounds, juce::Justification::centred);
+    }
+
+    // Drop overlay on top of everything
+    if (isDragOver)
+        paintDropOverlay(g);
 }
 
 void JimmyEditor::paintTransportBar(juce::Graphics& g, juce::Rectangle<int> area)
@@ -299,6 +323,102 @@ void JimmyEditor::resized()
     }
 }
 
+// --- FileDragAndDropTarget ---
+
+bool JimmyEditor::isInterestedInFileDrag(const juce::StringArray& files)
+{
+    for (const auto& f : files)
+        if (f.endsWithIgnoreCase(".mid") || f.endsWithIgnoreCase(".midi"))
+            return true;
+    return false;
+}
+
+void JimmyEditor::fileDragEnter(const juce::StringArray&, int, int)
+{
+    isDragOver = true;
+    repaint();
+}
+
+void JimmyEditor::fileDragExit(const juce::StringArray&)
+{
+    isDragOver = false;
+    repaint();
+}
+
+void JimmyEditor::filesDropped(const juce::StringArray& files, int, int)
+{
+    isDragOver = false;
+
+    for (const auto& f : files)
+    {
+        if (f.endsWithIgnoreCase(".mid") || f.endsWithIgnoreCase(".midi"))
+        {
+            importMidiFile(juce::File(f));
+            break;
+        }
+    }
+
+    repaint();
+}
+
+void JimmyEditor::importMidiFile(const juce::File& file)
+{
+    auto result = MidiChordImporter::importFromFile(file);
+
+    if (!result.success)
+    {
+        importToastMessage = result.errorMessage;
+        importToastCountdown = 120;  // ~4 seconds at 30Hz
+        return;
+    }
+
+    if (result.chords.empty())
+    {
+        importToastMessage = "No chords detected in MIDI file.";
+        importToastCountdown = 120;
+        return;
+    }
+
+    // Clear existing MIDI chords and add imported ones
+    processorRef.songModel.clearMidiChords();
+    for (const auto& chord : result.chords)
+        processorRef.songModel.addChord(chord);
+
+    importToastMessage = "Imported " + juce::String((int)result.chords.size()) + " chords from " + file.getFileName();
+    importToastCountdown = 120;
+}
+
+void JimmyEditor::paintDropOverlay(juce::Graphics& g)
+{
+    g.setColour(juce::Colour(0xaa000000));
+    g.fillRect(getLocalBounds());
+
+    auto bounds = getLocalBounds().reduced(40);
+    g.setColour(juce::Colour(0xff00bcd4));
+
+    // Dashed border effect
+    float dashLength = 12.0f;
+    float gapLength = 8.0f;
+    auto rect = bounds.toFloat();
+
+    for (float x = rect.getX(); x < rect.getRight(); x += dashLength + gapLength)
+    {
+        float w = std::min(dashLength, rect.getRight() - x);
+        g.fillRect(x, rect.getY(), w, 2.0f);
+        g.fillRect(x, rect.getBottom() - 2.0f, w, 2.0f);
+    }
+    for (float y = rect.getY(); y < rect.getBottom(); y += dashLength + gapLength)
+    {
+        float h = std::min(dashLength, rect.getBottom() - y);
+        g.fillRect(rect.getX(), y, 2.0f, h);
+        g.fillRect(rect.getRight() - 2.0f, y, 2.0f, h);
+    }
+
+    g.setColour(juce::Colours::white);
+    g.setFont(juce::Font(juce::FontOptions(24.0f)));
+    g.drawText("Drop MIDI file to import chords", bounds, juce::Justification::centred);
+}
+
 void JimmyEditor::showHelpPopup()
 {
     auto helpText = juce::String(
@@ -332,9 +452,20 @@ void JimmyEditor::showHelpPopup()
         "track. Chords are detected automatically and displayed\n"
         "above lyrics in Live Mode.\n\n"
 
+        "IMPORTING CHORDS FROM MIDI\n"
+        "To import all chords at once:\n"
+        "1. In Cubase: Project > Chord Track > Chords to MIDI\n"
+        "2. Drag the resulting MIDI part from the arrangement\n"
+        "   onto Jimmy's plugin window\n"
+        "3. Or export a .mid file and drag that onto the window\n"
+        "All chords will be placed at their correct bar positions.\n"
+        "Use 'Clear MIDI Chords' in Edit mode to remove them.\n\n"
+
         "LIVE MODE\n"
         "Click 'LIVE MODE' to switch to the teleprompter view.\n"
         "Use +/- to zoom. The display auto-scrolls with the DAW.\n"
+        "All chords are shown above each lyric line at their\n"
+        "proportional position. The active chord is brighter.\n"
     );
 
     juce::AlertWindow::showMessageBoxAsync(

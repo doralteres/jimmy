@@ -45,6 +45,9 @@ public:
     std::atomic<int> currentChordHash { 0 };
     juce::String currentDetectedChord;
 
+    // Lock-free FIFO for chord events (audio thread -> UI thread)
+    ChordEventFifo chordEventFifo;
+
 private:
     juce::String lastDetectedChord;
 

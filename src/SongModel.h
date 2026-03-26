@@ -4,6 +4,7 @@
 #include <juce_data_structures/juce_data_structures.h>
 #include <vector>
 #include <mutex>
+#include <algorithm>
 
 // Represents a chord at a specific timeline position.
 struct Chord
@@ -73,6 +74,14 @@ public:
     {
         std::lock_guard<std::mutex> lock(mutex);
         return chords;
+    }
+
+    void clearMidiChords()
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        chords.erase(std::remove_if(chords.begin(), chords.end(),
+                     [](const Chord& c) { return c.source == Chord::Midi; }),
+                     chords.end());
     }
 
     // Returns the active chord at a given bar position
