@@ -1,5 +1,10 @@
 cmake_minimum_required(VERSION 3.22)
 
+# Build universal binary on macOS (Intel + Apple Silicon)
+if(APPLE AND NOT CMAKE_OSX_ARCHITECTURES)
+    set(CMAKE_OSX_ARCHITECTURES "x86_64;arm64" CACHE STRING "Build universal binary")
+endif()
+
 project(Jimmy VERSION 0.2.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
