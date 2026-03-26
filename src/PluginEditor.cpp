@@ -26,7 +26,6 @@ namespace
 JimmyEditor::JimmyEditor(JimmyProcessor& p)
     : AudioProcessorEditor(&p),
       processorRef(p),
-      sectionManager(p.songModel),
       lyricsEditor(p.songModel)
 {
     setSize(900, 700);
@@ -46,37 +45,6 @@ JimmyEditor::JimmyEditor(JimmyProcessor& p)
     };
     addAndMakeVisible(modeToggleBtn);
 
-    // Tab buttons
-    auto setupTabBtn = [](juce::TextButton& btn, bool active)
-    {
-        btn.setColour(juce::TextButton::buttonColourId,
-                      active ? juce::Colour(0xff00bcd4) : juce::Colour(0xff333333));
-        btn.setColour(juce::TextButton::textColourOnId, juce::Colours::white);
-        btn.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffcccccc));
-    };
-
-    setupTabBtn(lyricsTabBtn, true);
-    setupTabBtn(sectionsTabBtn, false);
-
-    lyricsTabBtn.onClick = [this]
-    {
-        currentTab = EditTab::Lyrics;
-        lyricsTabBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff00bcd4));
-        sectionsTabBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff333333));
-        resized();
-    };
-    sectionsTabBtn.onClick = [this]
-    {
-        currentTab = EditTab::Sections;
-        sectionsTabBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff00bcd4));
-        lyricsTabBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff333333));
-        resized();
-    };
-
-    addAndMakeVisible(lyricsTabBtn);
-    addAndMakeVisible(sectionsTabBtn);
-
-    addChildComponent(sectionManager);
     addAndMakeVisible(lyricsEditor);
 
     // Teleprompter + zoom controls
@@ -331,28 +299,17 @@ void JimmyEditor::resized()
 
     if (currentMode == Mode::Edit)
     {
-        sectionsTabBtn.setVisible(true);
-        lyricsTabBtn.setVisible(true);
-        lyricsTabBtn.setBounds(toolbar.removeFromLeft(90).reduced(4));
-        sectionsTabBtn.setBounds(toolbar.removeFromLeft(90).reduced(4));
-
-        bool showLyrics = (currentTab == EditTab::Lyrics);
-        lyricsEditor.setVisible(showLyrics);
-        sectionManager.setVisible(!showLyrics);
+        lyricsEditor.setVisible(true);
         teleprompterView.setVisible(false);
         zoomInBtn.setVisible(false);
         zoomOutBtn.setVisible(false);
 
         lyricsEditor.setBounds(area);
-        sectionManager.setBounds(area);
     }
     else
     {
         // Live mode: show teleprompter + zoom controls
-        sectionsTabBtn.setVisible(false);
-        lyricsTabBtn.setVisible(false);
         lyricsEditor.setVisible(false);
-        sectionManager.setVisible(false);
 
         // Zoom buttons in toolbar
         zoomOutBtn.setVisible(true);

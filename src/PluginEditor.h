@@ -1,7 +1,6 @@
 #pragma once
 
 #include "PluginProcessor.h"
-#include "SectionManager.h"
 #include "LyricsEditor.h"
 #include "TeleprompterView.h"
 #include "MidiChordImporter.h"
@@ -39,14 +38,7 @@ private:
     Mode currentMode = Mode::Edit;
     juce::TextButton modeToggleBtn;
 
-    // Edit mode tab buttons
-    juce::TextButton sectionsTabBtn { "Sections" };
-    juce::TextButton lyricsTabBtn  { "Lyrics" };
-    enum class EditTab { Sections, Lyrics };
-    EditTab currentTab = EditTab::Lyrics;
-
     // Edit mode components
-    SectionManager sectionManager;
     LyricsEditor   lyricsEditor;
 
     // Live mode components
