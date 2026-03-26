@@ -58,6 +58,7 @@ After modifying source files, always rebuild and verify zero warnings from `src/
 - **RTL/Hebrew support**: Use `TeleprompterView::isRtlText()` for text direction detection. Lyrics can be in Hebrew — always handle Unicode properly.
 - **No DSP**: `processBlock` clears output buffers. The plugin reads MIDI and transport only.
 - **MIDI chord detection**: Chord track MIDI → `ChordParser::identify()` via pitch-class interval matching.
+- **Documentation**: When making user-facing changes (new features, changed behavior, new UI elements), update the relevant docs (`docs/USAGE.md`, in-plugin help text in `PluginEditor.cpp::showHelpPopup()`, and `docs/INSTALL.md` if setup steps change). Keep docs and code in sync.
 
 ## Documentation
 
