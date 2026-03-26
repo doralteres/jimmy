@@ -18,9 +18,24 @@ public:
         bulkEditor.setColour(juce::TextEditor::backgroundColourId, juce::Colour(0xff2a2a2a));
         bulkEditor.setColour(juce::TextEditor::textColourId, juce::Colours::white);
         bulkEditor.setFont(juce::Font(juce::FontOptions(15.0f)));
-        bulkEditor.setTextToShowWhenEmpty("Enter lyrics here, one line per phrase...",
-                                          juce::Colour(0xff666666));
+        bulkEditor.setTextToShowWhenEmpty(
+            "[Verse 1]\n"
+            "[break: 2]\n"
+            "First line [length: 4]\n"
+            "Second line [length: 3]\n\n"
+            "[Chorus]\n"
+            "Chorus line one",
+            juce::Colour(0xff555555));
         addAndMakeVisible(bulkEditor);
+
+        // Format hint label shown above the text editor
+        formatHintLabel.setText(
+            "Sections: [Verse 1]   Break: [break: 2]   Custom length: Line text [length: 4]   Default: 2 bars/line",
+            juce::dontSendNotification);
+        formatHintLabel.setFont(juce::Font(juce::FontOptions(11.0f)));
+        formatHintLabel.setColour(juce::Label::textColourId, juce::Colour(0xff777777));
+        formatHintLabel.setJustificationType(juce::Justification::centredLeft);
+        addAndMakeVisible(formatHintLabel);
 
         // Parse button
         parseBtn.setButtonText("Apply Lyrics");
@@ -64,6 +79,8 @@ public:
         auto area = getLocalBounds();
         auto topHalf = area.removeFromTop(area.getHeight() / 2);
 
+        // Format hint above the text editor
+        formatHintLabel.setBounds(topHalf.removeFromTop(18).reduced(4, 2));
         bulkEditor.setBounds(topHalf.reduced(2));
 
         auto btnRow = area.removeFromTop(32).reduced(2);
@@ -351,6 +368,7 @@ private:
 
     SongModel& songModel;
     juce::TextEditor bulkEditor;
+    juce::Label formatHintLabel;
     juce::TextButton parseBtn;
     juce::TextButton autoDistBtn;
     juce::TextButton clearChordsBtn;
