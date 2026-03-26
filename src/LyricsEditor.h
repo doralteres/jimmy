@@ -169,6 +169,46 @@ private:
         return false;
     }
 
+    // Checks if a line is a break directive like [break: 3]
+    static bool isBreakDirective(const juce::String& line, double& outBars)
+    {
+        auto trimmed = line.trim();
+        if (trimmed.startsWith("[") && trimmed.endsWith("]"))
+        {
+            auto inner = trimmed.substring(1, trimmed.length() - 1).trim();
+            if (inner.startsWithIgnoreCase("break:"))
+            {
+                outBars = inner.fromFirstOccurrenceOf(":", false, false).trim().getDoubleValue();
+                return outBars > 0.0;
+            }
+        }
+        return false;
+    }
+
+    // Extracts [length: N] from end of a lyric line, returns the text without the directive
+    static juce::String extractLengthDirective(const juce::String& line, double& outLength)
+    {
+        int bracketStart = line.lastIndexOfChar('[');
+        if (bracketStart >= 0 && line.trimEnd().endsWithChar(']'))
+        {
+            auto directive = line.substring(bracketStart + 1, line.trimEnd().length() - 1).trim();
+            if (directive.startsWithIgnoreCase("length:") || directive.startsWithIgnoreCase("length "))
+            {
+                auto numStr = directive.fromFirstOccurrenceOf(":", false, false).trim();
+                if (numStr.isEmpty())
+                    numStr = directive.fromFirstOccurrenceOf(" ", false, false).trim();
+                double val = numStr.getDoubleValue();
+                if (val > 0.0)
+                {
+                    outLength = val;
+                    return line.substring(0, bracketStart).trimEnd();
+                }
+            }
+        }
+        outLength = 0.0;
+        return line;
+    }
+
     void parseBulkText()
     {
         auto text = bulkEditor.getText();
@@ -177,7 +217,7 @@ private:
         std::vector<LyricLine> newLyrics;
         std::vector<Section> newSections;
         double bar = 1.0;
-        double barsPerLine = 2.0;  // default
+        double defaultBarsPerLine = 2.0;
         int currentSectionIdx = -1;
 
         for (const auto& lineText : lines)
@@ -193,7 +233,7 @@ private:
                 Section sec;
                 sec.name = sectionName;
                 sec.startBar = static_cast<int>(bar);
-                sec.endBar = sec.startBar;  // will be extended as lyrics are added
+                sec.endBar = sec.startBar;
                 sec.colour = juce::Colour(
                     Theme::kSectionColours[newSections.size() % Theme::kNumSectionColours]);
                 newSections.push_back(sec);
@@ -201,19 +241,32 @@ private:
                 continue;
             }
 
+            // Check for break directives like [break: 3]
+            double breakBars = 0.0;
+            if (isBreakDirective(trimmed, breakBars))
+            {
+                bar += breakBars;
+                continue;
+            }
+
+            // Check for length directive like "lyric text [length: 4]"
+            double lineLength = 0.0;
+            auto lyricText = extractLengthDirective(trimmed, lineLength);
+            double barsForLine = (lineLength > 0.0) ? lineLength : defaultBarsPerLine;
+
             LyricLine ll;
-            ll.text = trimmed;
+            ll.text = lyricText;
             ll.startBar = bar;
-            ll.endBar = bar + barsPerLine;
+            ll.endBar = bar + barsForLine;
             ll.sectionIndex = currentSectionIdx;
             newLyrics.push_back(ll);
 
             // Extend current section to cover this line
             if (currentSectionIdx >= 0)
                 newSections[static_cast<size_t>(currentSectionIdx)].endBar =
-                    static_cast<int>(bar + barsPerLine);
+                    static_cast<int>(bar + barsForLine);
 
-            bar += barsPerLine;
+            bar += barsForLine;
         }
 
         songModel.setLyrics(newLyrics);
