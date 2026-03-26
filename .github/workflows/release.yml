@@ -18,6 +18,7 @@ jobs:
       uses: actions/checkout@v4
       with:
         submodules: recursive
+        fetch-depth: 0
         token: ${{ secrets.GITHUB_TOKEN }}
     
     - name: Install dependencies
@@ -56,6 +57,41 @@ jobs:
         git commit -m "[skip-ci] chore: bump version to ${{ steps.version.outputs.version }}" || echo "No changes to commit"
         git push || echo "Nothing to push"
     
+    - name: Generate changelog
+      id: changelog
+      run: |
+        # Get the previous tag
+        PREV_TAG=$(git describe --tags --abbrev=0 HEAD~1 2>/dev/null || echo "")
+        
+        if [ -n "$PREV_TAG" ]; then
+          echo "Generating changelog from $PREV_TAG to HEAD"
+          CHANGELOG=$(git log "${PREV_TAG}..HEAD" --pretty=format:"- %s" --no-merges | grep -v '\[skip-ci\]' || true)
+        else
+          echo "No previous tag found, using recent commits"
+          CHANGELOG=$(git log --pretty=format:"- %s" -20 --no-merges | grep -v '\[skip-ci\]' || true)
+        fi
+        
+        if [ -z "$CHANGELOG" ]; then
+          CHANGELOG="- Minor updates and improvements"
+        fi
+        
+        # Build full release body with changelog and installation instructions
+        cat > /tmp/changelog.txt << RELEASE_EOF
+        ## Jimmy VST3 - Version ${{ steps.version.outputs.version }}
+        
+        ### What's Changed
+        ${CHANGELOG}
+        
+        ### Installation
+        1. Download the \`Jimmy-${{ steps.version.outputs.version }}-macOS.zip\` file
+        2. Extract the \`Jimmy.vst3\` bundle
+        3. Copy it to your VST3 folder:
+           - macOS: \`~/Library/Audio/Plug-Ins/VST3/\`
+        RELEASE_EOF
+        
+        echo "Generated release body:"
+        cat /tmp/changelog.txt
+    
     - name: Configure CMake
       run: |
         cmake -B build -DCMAKE_BUILD_TYPE=Release
@@ -85,17 +121,7 @@ jobs:
       with:
         tag_name: ${{ steps.version.outputs.tag }}
         name: Jimmy-${{ steps.version.outputs.version }}
-        body: |
-          ## Jimmy VST3 - Version ${{ steps.version.outputs.version }}
-          
-          ### Installation
-          1. Download the `Jimmy-${{ steps.version.outputs.version }}-macOS.zip` file
-          2. Extract the `Jimmy.vst3` bundle
-          3. Copy it to your VST3 folder:
-             - macOS: `~/Library/Audio/Plug-Ins/VST3/`
-          
-          ### Changes
-          Auto-generated release from commit ${{ github.sha }}
+        body_path: /tmp/changelog.txt
         files: |
           Jimmy-${{ steps.version.outputs.version }}-macOS.zip
         draft: false
