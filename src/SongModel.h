@@ -159,6 +159,12 @@ public:
         lyrics = newLyrics;
     }
 
+    void setSections(const std::vector<Section>& newSections)
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        sections = newSections;
+    }
+
     std::vector<LyricLine> getLyrics() const
     {
         std::lock_guard<std::mutex> lock(mutex);

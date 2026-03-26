@@ -2,6 +2,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "SongModel.h"
+#include "Theme.h"
 
 // Lyrics editor: enter lyrics text and map each line to a bar range.
 class LyricsEditor : public juce::Component,
@@ -70,11 +71,21 @@ public:
     void refreshFromModel()
     {
         cachedLyrics = songModel.getLyrics();
+        auto sections = songModel.getSections();
 
-        // Rebuild the bulk text view from model
+        // Rebuild bulk text with section markers
         juce::String fullText;
+        int lastSectionIdx = -1;
         for (const auto& line : cachedLyrics)
         {
+            if (line.sectionIndex >= 0 && line.sectionIndex != lastSectionIdx
+                && line.sectionIndex < (int)sections.size())
+            {
+                lastSectionIdx = line.sectionIndex;
+                if (fullText.isNotEmpty())
+                    fullText += "\n";
+                fullText += "[" + sections[static_cast<size_t>(line.sectionIndex)].name + "]";
+            }
             if (fullText.isNotEmpty())
                 fullText += "\n";
             fullText += line.text;
@@ -143,14 +154,31 @@ public:
     }
 
 private:
+    // Checks if a line is a section marker like [Verse 1] or [Chorus]
+    static bool isSectionMarker(const juce::String& line, juce::String& outName)
+    {
+        auto trimmed = line.trim();
+        if (trimmed.startsWith("[") && trimmed.endsWith("]") && trimmed.length() > 2)
+        {
+            outName = trimmed.substring(1, trimmed.length() - 1).trim();
+            // Exclude break/length directives — those are timeline instructions
+            if (outName.startsWithIgnoreCase("break:") || outName.startsWithIgnoreCase("length:"))
+                return false;
+            return outName.isNotEmpty();
+        }
+        return false;
+    }
+
     void parseBulkText()
     {
         auto text = bulkEditor.getText();
         auto lines = juce::StringArray::fromLines(text);
 
         std::vector<LyricLine> newLyrics;
+        std::vector<Section> newSections;
         double bar = 1.0;
         double barsPerLine = 2.0;  // default
+        int currentSectionIdx = -1;
 
         for (const auto& lineText : lines)
         {
@@ -158,15 +186,38 @@ private:
             if (trimmed.isEmpty())
                 continue;
 
+            // Check for section markers like [Verse 1]
+            juce::String sectionName;
+            if (isSectionMarker(trimmed, sectionName))
+            {
+                Section sec;
+                sec.name = sectionName;
+                sec.startBar = static_cast<int>(bar);
+                sec.endBar = sec.startBar;  // will be extended as lyrics are added
+                sec.colour = juce::Colour(
+                    Theme::kSectionColours[newSections.size() % Theme::kNumSectionColours]);
+                newSections.push_back(sec);
+                currentSectionIdx = static_cast<int>(newSections.size()) - 1;
+                continue;
+            }
+
             LyricLine ll;
             ll.text = trimmed;
             ll.startBar = bar;
             ll.endBar = bar + barsPerLine;
+            ll.sectionIndex = currentSectionIdx;
             newLyrics.push_back(ll);
+
+            // Extend current section to cover this line
+            if (currentSectionIdx >= 0)
+                newSections[static_cast<size_t>(currentSectionIdx)].endBar =
+                    static_cast<int>(bar + barsPerLine);
+
             bar += barsPerLine;
         }
 
         songModel.setLyrics(newLyrics);
+        songModel.setSections(newSections);
         cachedLyrics = newLyrics;
         mappingTable.updateContent();
         mappingTable.repaint();
