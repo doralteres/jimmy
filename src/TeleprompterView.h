@@ -116,29 +116,38 @@ public:
 
                 g.setFont(juce::Font(juce::FontOptions(fontSize * 0.75f)));
 
-                float lastChordRight = rtl ? (float)getWidth() + 1.0f : -1.0f;
+                float lastChordRight = -1.0f;
 
                 for (const auto& lc : lineChords)
                 {
-                    // Proportional X within the line's bar range
+                    // Proportional position within the line's bar range
                     float xFraction = (lineSpan > 0.001)
                         ? static_cast<float>((lc.barPosition - line.startBar) / lineSpan)
                         : 0.0f;
                     xFraction = juce::jlimit(0.0f, 1.0f, xFraction);
-                    if (rtl)
-                        xFraction = 1.0f - xFraction;
 
-                    float chordX = margin + xFraction * contentWidth;
-                    float chordW = contentWidth * 0.25f; // max width per chord label
+                    // Measure chord text width
+                    juce::GlyphArrangement glyphs;
+                    glyphs.addLineOfText(g.getCurrentFont(), lc.name, 0.0f, 0.0f);
+                    float textW = glyphs.getBoundingBox(0, -1, true).getWidth();
+                    float chordW = textW + 8.0f;
 
-                    // Skip if overlapping previous chord
+                    float chordX;
                     if (rtl)
                     {
-                        if (chordX + chordW > lastChordRight && lastChordRight < (float)getWidth())
+                        // RTL: rightmost = start of line, leftward = later in bar
+                        float rightEdge = margin + contentWidth - xFraction * contentWidth;
+                        chordX = rightEdge - chordW;
+
+                        // Skip if overlapping previous chord (previous is to the right)
+                        if (lastChordRight >= 0.0f && chordX + chordW > lastChordRight)
                             continue;
                     }
                     else
                     {
+                        chordX = margin + xFraction * contentWidth;
+
+                        // Skip if overlapping previous chord
                         if (chordX < lastChordRight)
                             continue;
                     }
@@ -154,20 +163,13 @@ public:
                     auto chordBounds = juce::Rectangle<float>(chordX, y, chordW, chordHeight);
                     if (rtl)
                     {
-                        // Right-align chord text within its bounds
-                        float rightEdge = margin + contentWidth - xFraction * contentWidth;
-                        chordBounds = juce::Rectangle<float>(rightEdge - chordW, y, chordW, chordHeight);
                         g.drawText(lc.name, chordBounds, juce::Justification::centredRight);
-                        lastChordRight = chordBounds.getX();
+                        lastChordRight = chordX;
                     }
                     else
                     {
                         g.drawText(lc.name, chordBounds, juce::Justification::centredLeft);
-
-                        // Estimate text width for overlap detection
-                        juce::GlyphArrangement glyphs;
-                        glyphs.addLineOfText(g.getCurrentFont(), lc.name, 0.0f, 0.0f);
-                        lastChordRight = chordX + glyphs.getBoundingBox(0, -1, true).getWidth() + 8.0f;
+                        lastChordRight = chordX + chordW;
                     }
                 }
             }

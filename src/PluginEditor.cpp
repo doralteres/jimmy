@@ -157,6 +157,41 @@ void JimmyEditor::paint(juce::Graphics& g)
         // Teleprompter component handles live mode rendering
     }
 
+    // Show chord import hint when no chords exist
+    if (processorRef.songModel.getChords().empty() && !isDragOver && importToastCountdown <= 0)
+    {
+        auto hintArea = getLocalBounds().withTrimmedTop(kTransportBarHeight + kToolbarHeight);
+        auto hintBounds = hintArea.reduced(40).withHeight(80).withY(hintArea.getCentreY() - 40);
+
+        g.setColour(juce::Colour(0x22ffffff));
+        g.fillRoundedRectangle(hintBounds.toFloat(), 10.0f);
+
+        // Dashed border
+        g.setColour(juce::Colour(Theme::kAccent).withAlpha(0.3f));
+        auto r = hintBounds.toFloat().reduced(1.0f);
+        for (float x = r.getX(); x < r.getRight(); x += 16.0f)
+        {
+            float w = std::min(10.0f, r.getRight() - x);
+            g.fillRect(x, r.getY(), w, 1.5f);
+            g.fillRect(x, r.getBottom() - 1.5f, w, 1.5f);
+        }
+        for (float yy = r.getY(); yy < r.getBottom(); yy += 16.0f)
+        {
+            float h = std::min(10.0f, r.getBottom() - yy);
+            g.fillRect(r.getX(), yy, 1.5f, h);
+            g.fillRect(r.getRight() - 1.5f, yy, 1.5f, h);
+        }
+
+        g.setColour(juce::Colour(Theme::kTextDim));
+        g.setFont(juce::Font(juce::FontOptions(16.0f)));
+        g.drawText("Drag a MIDI file here to import chords", hintBounds.removeFromTop(44),
+                   juce::Justification::centredBottom);
+        g.setColour(juce::Colour(Theme::kTextFaded));
+        g.setFont(juce::Font(juce::FontOptions(12.0f)));
+        g.drawText("Cubase: Project > Chord Track > Chords to MIDI, then drag the MIDI part",
+                   hintBounds, juce::Justification::centredTop);
+    }
+
     // Import feedback toast
     if (importToastCountdown > 0 && importToastMessage.isNotEmpty())
     {
@@ -207,6 +242,13 @@ void JimmyEditor::paintTransportBar(juce::Graphics& g, juce::Rectangle<int> area
         g.setColour(kChordColour);
         g.setFont(juce::Font(juce::FontOptions(24.0f)));
         g.drawText(displayCurrentChord, statusArea, juce::Justification::centredLeft);
+    }
+    else if (!displayIsPlaying)
+    {
+        // Hint: show drag-drop instruction when no chords and stopped
+        g.setColour(kTextDim.withAlpha(0.5f));
+        g.setFont(juce::Font(juce::FontOptions(11.0f)));
+        g.drawText(juce::CharPointer_UTF8("\xf0\x9f\x8e\xb5 Drag .mid here"), statusArea, juce::Justification::centredLeft);
     }
 
     // Transport info columns
