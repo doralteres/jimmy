@@ -91,6 +91,12 @@ JimmyEditor::JimmyEditor(JimmyProcessor& p)
     zoomOutBtn.onClick = [this] { teleprompterView.setFontSize(teleprompterView.getFontSize() - 4.0f); };
     addChildComponent(zoomOutBtn);
 
+    // Help button (always visible)
+    helpBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff555555));
+    helpBtn.setColour(juce::TextButton::textColourOnId, juce::Colours::white);
+    helpBtn.onClick = [this] { showHelpPopup(); };
+    addAndMakeVisible(helpBtn);
+
     startTimerHz(30);
 }
 
@@ -252,9 +258,10 @@ void JimmyEditor::resized()
     auto area = getLocalBounds();
     area.removeFromTop(kTransportBarHeight);
 
-    // Toolbar: mode toggle + tabs
+    // Toolbar: mode toggle + help + tabs
     auto toolbar = area.removeFromTop(kToolbarHeight);
     modeToggleBtn.setBounds(toolbar.removeFromRight(110).reduced(4));
+    helpBtn.setBounds(toolbar.removeFromRight(36).reduced(4));
 
     if (currentMode == Mode::Edit)
     {
@@ -290,4 +297,50 @@ void JimmyEditor::resized()
         teleprompterView.setVisible(true);
         teleprompterView.setBounds(area);
     }
+}
+
+void JimmyEditor::showHelpPopup()
+{
+    auto helpText = juce::String(
+        "JIMMY - Live Teleprompter for Cubase\n"
+        "=====================================\n\n"
+
+        "LYRICS FORMAT\n"
+        "Enter lyrics in Edit Mode > Lyrics tab. One phrase per line.\n"
+        "Click 'Apply Lyrics' to map them to the timeline.\n\n"
+
+        "SECTION MARKERS\n"
+        "Add [Section Name] on its own line to create sections:\n"
+        "  [Verse 1]\n"
+        "  First line of verse\n"
+        "  [Chorus]\n"
+        "  Chorus line\n\n"
+
+        "TIMELINE DIRECTIVES\n"
+        "  [break: N]       Skip N bars before the next line\n"
+        "  Line [length: N] Set this line's duration to N bars\n"
+        "  (default is 2 bars per line)\n\n"
+
+        "Example:\n"
+        "  [Verse 1]\n"
+        "  [break: 2]\n"
+        "  Hello world [length: 4]\n"
+        "  Second line [length: 3]\n\n"
+
+        "CHORDS\n"
+        "Route your Cubase chord track MIDI to Jimmy's instrument\n"
+        "track. Chords are detected automatically and displayed\n"
+        "above lyrics in Live Mode.\n\n"
+
+        "LIVE MODE\n"
+        "Click 'LIVE MODE' to switch to the teleprompter view.\n"
+        "Use +/- to zoom. The display auto-scrolls with the DAW.\n"
+    );
+
+    juce::AlertWindow::showMessageBoxAsync(
+        juce::MessageBoxIconType::InfoIcon,
+        "Jimmy Help",
+        helpText,
+        "OK",
+        this);
 }

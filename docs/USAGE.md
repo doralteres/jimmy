@@ -27,7 +27,25 @@ When Jimmy receives MIDI notes, it will automatically identify the chord (major,
 
 ### 3. Using sections (optional)
 
-Sections represent song structure (Verse, Chorus, Bridge, etc.):
+Sections represent song structure (Verse, Chorus, Bridge, etc.). There are two ways to define them:
+
+**Option A: Inline in lyrics text (recommended)**
+
+Include section markers directly in your lyrics using `[Section Name]` syntax:
+
+```
+[Verse 1]
+First line of verse
+Second line of verse
+
+[Chorus]
+Chorus line one
+Chorus line two
+```
+
+When you click **Apply Lyrics**, sections are automatically created from the markers.
+
+**Option B: Manual section editor**
 
 1. Switch to **Edit Mode** (default when you open the plugin)
 2. Click the **Sections** tab
@@ -43,6 +61,27 @@ Sections represent song structure (Verse, Chorus, Bridge, etc.):
 3. Click **Apply Lyrics** — each line will be mapped to a 2-bar range by default
 4. Use **Auto-distribute** to evenly spread lyrics across your defined sections
 5. Double-click the **Start Bar** or **End Bar** cells in the mapping table to fine-tune positions
+
+#### Timeline directives
+
+You can control bar timing directly in the lyrics text instead of editing the mapping table:
+
+- **`[break: N]`** — inserts a gap of N bars before the next lyric line
+- **`[length: N]`** at the end of a line — sets that line's duration to N bars
+
+Example:
+```
+[Verse 1]
+[break: 2]
+First line of verse [length: 4]
+Second line [length: 3]
+
+[Chorus]
+Chorus line one [length: 4]
+Chorus line two [length: 4]
+```
+
+Lines without a `[length:]` directive default to 2 bars each.
 
 ### 5. Switch to Live Mode
 
@@ -65,3 +104,7 @@ Jimmy automatically detects Hebrew (and Arabic) text and right-aligns those line
 - **Keep the plugin window visible** — resize and position it on your screen before the show
 - **All data is saved with the project** — lyrics, sections, chords, zoom level all persist when you save the Cubase project
 - **Low CPU impact** — Jimmy produces no audio output, so it adds virtually zero latency or CPU load
+
+## In-Plugin Help
+
+Click the **?** button in the toolbar to view a quick-reference guide directly inside the plugin. This covers the lyrics format, section markers, and timeline directives.

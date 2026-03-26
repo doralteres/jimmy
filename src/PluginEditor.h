@@ -20,6 +20,7 @@ private:
     void timerCallback() override;
     void paintTransportBar(juce::Graphics& g, juce::Rectangle<int> area);
     void paintChordDisplay(juce::Graphics& g, juce::Rectangle<int> area);
+    void showHelpPopup();
 
     JimmyProcessor& processorRef;
 
@@ -42,6 +43,7 @@ private:
     TeleprompterView teleprompterView;
     juce::TextButton zoomInBtn  { "+" };
     juce::TextButton zoomOutBtn { "-" };
+    juce::TextButton helpBtn    { "?" };
 
     // Cached display values (updated by timer, read by paint)
     double   displayBpm        = 120.0;
