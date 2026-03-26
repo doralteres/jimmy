@@ -1,5 +1,6 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include <cmath>
 
 JimmyProcessor::JimmyProcessor()
     : AudioProcessor(BusesProperties()
@@ -48,13 +49,21 @@ void JimmyProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBu
             }
 
             if (auto ppq = pos->getPpqPosition())
+            {
                 transportState.ppqPosition.store(*ppq, std::memory_order_relaxed);
 
-            if (auto barStart = pos->getPpqPositionOfLastBarStart())
-                transportState.barStartPpq.store(*barStart, std::memory_order_relaxed);
-
-            if (auto bars = pos->getBarCount())
-                transportState.barCount.store(*bars, std::memory_order_relaxed);
+                // Compute bar count from PPQ position — more reliable than
+                // getBarCount() which some hosts (e.g. Cubase) don't update.
+                int tsNum = transportState.timeSigNum.load(std::memory_order_relaxed);
+                int tsDen = transportState.timeSigDen.load(std::memory_order_relaxed);
+                double ppqPerBar = tsNum * (4.0 / tsDen);
+                if (ppqPerBar > 0.0)
+                {
+                    auto computedBar = static_cast<int64_t>(std::floor(*ppq / ppqPerBar));
+                    transportState.barCount.store(computedBar, std::memory_order_relaxed);
+                    transportState.barStartPpq.store(computedBar * ppqPerBar, std::memory_order_relaxed);
+                }
+            }
         }
     }
 
