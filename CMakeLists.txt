@@ -13,7 +13,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 add_subdirectory(libs/JUCE)
 
 juce_add_plugin(Jimmy
-    COMPANY_NAME "JimmyAudio"
+    COMPANY_NAME "doralteres"
     IS_SYNTH TRUE
     NEEDS_MIDI_INPUT TRUE
     NEEDS_MIDI_OUTPUT FALSE
