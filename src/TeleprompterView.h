@@ -118,6 +118,14 @@ public:
                 bool rtl = isRtlText(line.text);
                 double lineSpan = line.endBar - line.startBar;
 
+                // Measure the actual rendered width of the lyric text so 100% maps
+                // to the end of the text, not the full content box.
+                juce::GlyphArrangement lineGlyphs;
+                lineGlyphs.addLineOfText(juce::Font(juce::FontOptions(fontSize)),
+                                         line.text, 0.0f, 0.0f);
+                float lineTextWidth = lineGlyphs.getBoundingBox(0, -1, true).getWidth();
+                lineTextWidth = juce::jlimit(1.0f, contentWidth, lineTextWidth);
+
                 g.setFont(juce::Font(juce::FontOptions(fontSize * 0.75f)));
 
                 float lastChordRight = -1.0f;
@@ -139,8 +147,9 @@ public:
                     float chordX;
                     if (rtl)
                     {
-                        // RTL: rightmost = start of line, leftward = later in bar
-                        float rightEdge = margin + contentWidth - xFraction * contentWidth;
+                        // RTL: rightmost = start of line, leftward = later in bar.
+                        // 100% maps to the left edge of the rendered text.
+                        float rightEdge = margin + contentWidth - xFraction * lineTextWidth;
                         chordX = rightEdge - chordW;
 
                         // Skip if overlapping previous chord (previous is to the right)
@@ -149,7 +158,8 @@ public:
                     }
                     else
                     {
-                        chordX = margin + xFraction * contentWidth;
+                        // LTR: 100% maps to the right edge of the rendered text.
+                        chordX = margin + xFraction * lineTextWidth;
 
                         // Skip if overlapping previous chord
                         if (chordX < lastChordRight)
