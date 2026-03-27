@@ -111,106 +111,125 @@ public:
             else
                 alpha = 0.4f;
 
-            // Draw all chords for this lyric line at proportional X positions
-            if (y + chordHeight > 0 && y < viewHeight)
+            // Build word-wrapped rows for this lyric line
+            auto lyricsFont  = juce::Font(juce::FontOptions(fontSize));
+            auto chordFont   = juce::Font(juce::FontOptions(fontSize * 0.75f));
+            bool rtl         = isRtlText(line.text);
+            double lineSpan  = line.endBar - line.startBar;
+            auto wrappedRows = buildWrappedRows(line.text, lyricsFont, contentWidth);
+            int  numRows     = (int)wrappedRows.size();
+
+            // Compute row xFraction boundaries proportional to each row's char count
+            std::vector<float> rowBoundaries(static_cast<size_t>(numRows + 1), 0.0f);
             {
-                auto lineChords = getChordsForLine(line.startBar, line.endBar);
-                bool rtl = isRtlText(line.text);
-                double lineSpan = line.endBar - line.startBar;
-
-                // Measure the actual rendered width of the lyric text so 100% maps
-                // to the end of the text, not the full content box.
-                juce::GlyphArrangement lineGlyphs;
-                lineGlyphs.addLineOfText(juce::Font(juce::FontOptions(fontSize)),
-                                         line.text, 0.0f, 0.0f);
-                float lineTextWidth = lineGlyphs.getBoundingBox(0, -1, true).getWidth();
-                lineTextWidth = juce::jlimit(1.0f, contentWidth, lineTextWidth);
-
-                g.setFont(juce::Font(juce::FontOptions(fontSize * 0.75f)));
-
-                float lastChordRight = -1.0f;
-
-                for (const auto& lc : lineChords)
+                int totalChars = 0;
+                for (const auto& r : wrappedRows) totalChars += r.text.length();
+                totalChars = juce::jmax(1, totalChars);
+                float cum = 0.0f;
+                for (int r = 0; r < numRows; ++r)
                 {
-                    // Proportional position within the line's bar range
-                    float xFraction = (lineSpan > 0.001)
-                        ? static_cast<float>((lc.barPosition - line.startBar) / lineSpan)
-                        : 0.0f;
-                    xFraction = juce::jlimit(0.0f, 1.0f, xFraction);
+                    rowBoundaries[static_cast<size_t>(r)] = cum;
+                    cum += (float)wrappedRows[static_cast<size_t>(r)].text.length() / (float)totalChars;
+                }
+                rowBoundaries[static_cast<size_t>(numRows)] = 1.0f;
+            }
 
-                    // Measure chord text width
-                    juce::GlyphArrangement glyphs;
-                    glyphs.addLineOfText(g.getCurrentFont(), lc.name, 0.0f, 0.0f);
-                    float textW = glyphs.getBoundingBox(0, -1, true).getWidth();
-                    float chordW = textW + 8.0f;
+            // Assign each chord to a wrapped row
+            auto lineChords = getChordsForLine(line.startBar, line.endBar);
+            struct PlacedChord { int row; float subFrac; Chord chord; };
+            std::vector<PlacedChord> placedChords;
+            for (const auto& lc : lineChords)
+            {
+                float xf = (lineSpan > 0.001)
+                    ? static_cast<float>((lc.barPosition - line.startBar) / lineSpan) : 0.0f;
+                xf = juce::jlimit(0.0f, 1.0f, xf);
+                int r = numRows - 1;
+                for (int ri = 0; ri < numRows; ++ri)
+                    if (xf < rowBoundaries[static_cast<size_t>(ri + 1)]) { r = ri; break; }
+                float span = rowBoundaries[static_cast<size_t>(r + 1)] - rowBoundaries[static_cast<size_t>(r)];
+                float subFrac = (span > 0.0f) ? (xf - rowBoundaries[static_cast<size_t>(r)]) / span : 0.0f;
+                placedChords.push_back({ r, juce::jlimit(0.0f, 1.0f, subFrac), lc });
+            }
 
-                    float chordX;
-                    if (rtl)
+            // Highlight spans all wrapped rows for the current line
+            if (i == currentLineIndex)
+            {
+                float totalH = (float)numRows * (chordHeight + lineHeight);
+                g.setColour(juce::Colour(Theme::kAccent).withAlpha(0.08f));
+                g.fillRect(0.0f, y, (float)getWidth(), totalH);
+            }
+
+            // Draw each wrapped row: chords above, then lyric text below
+            float rowY = y;
+            for (int r = 0; r < numRows; ++r)
+            {
+                const auto& row = wrappedRows[static_cast<size_t>(r)];
+                float rowTextWidth = juce::jlimit(1.0f, contentWidth, row.textWidth);
+
+                // Draw chords for this row
+                if (rowY + chordHeight > 0 && rowY < viewHeight)
+                {
+                    float lastChordRight = -1.0f;
+                    g.setFont(chordFont);
+
+                    for (const auto& pc : placedChords)
                     {
-                        // RTL: rightmost = start of line, leftward = later in bar.
-                        // 100% maps to the left edge of the rendered text.
-                        float rightEdge = margin + contentWidth - xFraction * lineTextWidth;
-                        chordX = rightEdge - chordW;
+                        if (pc.row != r) continue;
 
-                        // Skip if overlapping previous chord (previous is to the right)
-                        if (lastChordRight >= 0.0f && chordX + chordW > lastChordRight)
-                            continue;
-                    }
-                    else
-                    {
-                        // LTR: 100% maps to the right edge of the rendered text.
-                        chordX = margin + xFraction * lineTextWidth;
+                        juce::GlyphArrangement chordGlyphs;
+                        chordGlyphs.addLineOfText(chordFont, pc.chord.name, 0.0f, 0.0f);
+                        float textW = chordGlyphs.getBoundingBox(0, -1, true).getWidth();
+                        float chordW = textW + 8.0f;
+                        float chordX;
 
-                        // Skip if overlapping previous chord
-                        if (chordX < lastChordRight)
-                            continue;
-                    }
+                        if (rtl)
+                        {
+                            float rightEdge = margin + contentWidth - pc.subFrac * rowTextWidth;
+                            chordX = rightEdge - chordW;
+                            if (lastChordRight >= 0.0f && chordX + chordW > lastChordRight)
+                                continue;
+                        }
+                        else
+                        {
+                            chordX = margin + pc.subFrac * rowTextWidth;
+                            if (chordX < lastChordRight)
+                                continue;
+                        }
 
-                    // Active chord (currently playing) is brighter
-                    bool isActive = (lc.barPosition <= currentBarPos);
+                        bool isActive = (pc.chord.barPosition <= currentBarPos);
+                        g.setColour((isActive ? juce::Colour(Theme::kChordColour)
+                                              : juce::Colour(Theme::kChordDimColour))
+                                    .withAlpha(isActive ? alpha : alpha * 0.85f));
 
-                    if (isActive)
-                        g.setColour(juce::Colour(Theme::kChordColour).withAlpha(alpha));
-                    else
-                        g.setColour(juce::Colour(Theme::kChordDimColour).withAlpha(alpha * 0.85f));
-
-                    auto chordBounds = juce::Rectangle<float>(chordX, y, chordW, chordHeight);
-                    if (rtl)
-                    {
-                        g.drawText(lc.name, chordBounds, juce::Justification::centredRight);
-                        lastChordRight = chordX;
-                    }
-                    else
-                    {
-                        g.drawText(lc.name, chordBounds, juce::Justification::centredLeft);
-                        lastChordRight = chordX + chordW;
+                        auto cb = juce::Rectangle<float>(chordX, rowY, chordW, chordHeight);
+                        if (rtl)
+                        {
+                            g.drawText(pc.chord.name, cb, juce::Justification::centredRight);
+                            lastChordRight = chordX;
+                        }
+                        else
+                        {
+                            g.drawText(pc.chord.name, cb, juce::Justification::centredLeft);
+                            lastChordRight = chordX + chordW;
+                        }
                     }
                 }
-            }
-            y += chordHeight;
+                rowY += chordHeight;
 
-            // Draw lyric line
-            if (y + lineHeight > 0 && y < viewHeight)
-            {
-                g.setColour(juce::Colour(Theme::kTextPrimary).withAlpha(alpha));
-                g.setFont(juce::Font(juce::FontOptions(fontSize)));
-
-                // Highlight current line
-                if (i == currentLineIndex)
+                // Draw lyric text for this row
+                if (rowY + lineHeight > 0 && rowY < viewHeight)
                 {
-                    g.setColour(juce::Colour(Theme::kAccent).withAlpha(0.08f));
-                    g.fillRect(0.0f, y, (float)getWidth(), lineHeight);
-                    g.setColour(juce::Colour(Theme::kTextPrimary));
+                    g.setColour(juce::Colour(Theme::kTextPrimary).withAlpha(alpha));
+                    g.setFont(lyricsFont);
+                    auto tb = juce::Rectangle<float>(margin, rowY, contentWidth, lineHeight);
+                    if (rtl)
+                        g.drawText(row.text, tb, juce::Justification::centredRight);
+                    else
+                        g.drawText(row.text, tb, juce::Justification::centredLeft);
                 }
-
-                auto textBounds = juce::Rectangle<float>(margin, y, contentWidth, lineHeight);
-
-                if (isRtlText(line.text))
-                    g.drawText(line.text, textBounds, juce::Justification::centredRight);
-                else
-                    g.drawText(line.text, textBounds, juce::Justification::centredLeft);
+                rowY += lineHeight;
             }
-            y += lineHeight + lineSpacing;
+            y = rowY + lineSpacing;
         }
     }
 
@@ -223,6 +242,51 @@ private:
     std::vector<LyricLine> currentLyrics;
     std::vector<Chord>     currentChords;
     std::vector<Section>   currentSections;
+
+    struct WrappedRow
+    {
+        juce::String text;
+        float textWidth = 0.0f;
+    };
+
+    // Splits text into word-wrapped rows that each fit within maxWidth.
+    std::vector<WrappedRow> buildWrappedRows(const juce::String& text,
+                                              const juce::Font& font,
+                                              float maxWidth) const
+    {
+        auto measureW = [&font](const juce::String& s) -> float
+        {
+            juce::GlyphArrangement ga;
+            ga.addLineOfText(font, s, 0.0f, 0.0f);
+            return ga.getBoundingBox(0, -1, true).getWidth();
+        };
+
+        if (text.isEmpty())
+            return { { text, 0.0f } };
+
+        std::vector<WrappedRow> rows;
+        juce::StringArray words;
+        words.addTokens(text, " ", "\"");
+
+        juce::String current;
+        for (int wi = 0; wi < words.size(); ++wi)
+        {
+            juce::String candidate = current.isEmpty() ? words[wi]
+                                                       : (current + " " + words[wi]);
+            if (measureW(candidate) <= maxWidth || current.isEmpty())
+                current = candidate;
+            else
+            {
+                rows.push_back({ current, measureW(current) });
+                current = words[wi];
+            }
+        }
+        if (!current.isEmpty())
+            rows.push_back({ current, measureW(current) });
+        if (rows.empty())
+            rows.push_back({ text, measureW(text) });
+        return rows;
+    }
 
     int findCurrentLine() const
     {
@@ -265,7 +329,13 @@ private:
                 y += sectionHeight + 4.0f;
             }
             if (i < currentLine)
-                y += chordHeight + lineHeight + lineSpacing;
+            {
+                int numRows = (int)buildWrappedRows(
+                    loopLine.text,
+                    juce::Font(juce::FontOptions(fontSize)),
+                    juce::jmax(1.0f, (float)getWidth() - 40.0f)).size();
+                y += (float)numRows * (chordHeight + lineHeight) + lineSpacing;
+            }
         }
 
         targetScrollY = y - centerY;
