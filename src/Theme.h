@@ -32,4 +32,19 @@ namespace Theme
         0xff03a9f4,  // blue
     };
     inline constexpr int kNumSectionColours = 6;
+
+    // Simple RTL detection: check if text starts with Hebrew/Arabic Unicode range
+    inline bool isRtlText(const juce::String& text)
+    {
+        for (auto c : text)
+        {
+            if (c >= 0x0590 && c <= 0x08FF)  // Hebrew, Arabic, and related blocks
+                return true;
+            if (c > 0x7F)
+                return false;  // other non-ASCII, assume LTR
+            if (c > ' ')
+                return false;  // ASCII letter, LTR
+        }
+        return false;
+    }
 }

@@ -32,6 +32,7 @@ struct LyricLine
     double startBar = 1.0;
     double endBar   = 2.0;
     int sectionIndex = -1;  // optional link to a Section
+    bool isBreak = false;   // true = timeline break (no lyrics displayed)
 };
 
 // The complete song data model. Thread-safe via mutex for UI thread access.
@@ -215,6 +216,8 @@ public:
             el->setAttribute("startBar", l.startBar);
             el->setAttribute("endBar", l.endBar);
             el->setAttribute("section", l.sectionIndex);
+            if (l.isBreak)
+                el->setAttribute("isBreak", true);
         }
 
         return root;
@@ -264,6 +267,7 @@ public:
                 l.startBar = el->getDoubleAttribute("startBar", 1.0);
                 l.endBar = el->getDoubleAttribute("endBar", 2.0);
                 l.sectionIndex = el->getIntAttribute("section", -1);
+                l.isBreak = el->getBoolAttribute("isBreak", false);
                 lyrics.push_back(l);
             }
         }

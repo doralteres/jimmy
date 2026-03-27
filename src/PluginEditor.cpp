@@ -126,6 +126,18 @@ void JimmyEditor::paint(juce::Graphics& g)
     }
 
     // Show chord import hint when no chords exist
+    // (rendered in paintOverChildren so it appears above child components)
+
+    // Import feedback toast
+    // (rendered in paintOverChildren)
+
+    // Drop overlay on top of everything
+    // (rendered in paintOverChildren)
+}
+
+void JimmyEditor::paintOverChildren(juce::Graphics& g)
+{
+    // Show chord import hint when no chords exist
     if (processorRef.songModel.getChords().empty() && !isDragOver && importToastCountdown <= 0)
     {
         auto hintArea = getLocalBounds().withTrimmedTop(kTransportBarHeight + kToolbarHeight);

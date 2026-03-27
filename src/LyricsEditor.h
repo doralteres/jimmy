@@ -26,6 +26,7 @@ public:
             "[Chorus]\n"
             "Chorus line one",
             juce::Colour(0xff555555));
+        bulkEditor.onTextChange = [this] { updateEditorJustification(); };
         addAndMakeVisible(bulkEditor);
 
         // Format hint label shown above the text editor
@@ -58,6 +59,21 @@ public:
         clearChordsBtn.onClick = [this] { songModel.clearMidiChords(); };
         addAndMakeVisible(clearChordsBtn);
 
+        // Bar mode toggle button (Start/End vs Length)
+        barModeBtn.setButtonText("Length Mode");
+        barModeBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff555555));
+        barModeBtn.setColour(juce::TextButton::textColourOnId, juce::Colours::white);
+        barModeBtn.onClick = [this] { toggleBarMode(); };
+        addAndMakeVisible(barModeBtn);
+
+        // Add Break button (visible only in Length mode)
+        addBreakBtn.setButtonText("+ Add Break");
+        addBreakBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xffff9800));
+        addBreakBtn.setColour(juce::TextButton::textColourOnId, juce::Colours::white);
+        addBreakBtn.onClick = [this] { addBreak(); };
+        addBreakBtn.setVisible(false);
+        addAndMakeVisible(addBreakBtn);
+
         // Bar mapping table
         addAndMakeVisible(mappingTable);
         mappingTable.setModel(this);
@@ -89,6 +105,12 @@ public:
         autoDistBtn.setBounds(btnRow.removeFromLeft(140));
         btnRow.removeFromLeft(8);
         clearChordsBtn.setBounds(btnRow.removeFromLeft(150));
+        btnRow.removeFromLeft(8);
+        barModeBtn.setBounds(btnRow.removeFromLeft(120));
+
+        auto btnRow2 = area.removeFromTop(32).reduced(2);
+        if (lengthMode)
+            addBreakBtn.setBounds(btnRow2.removeFromLeft(120));
 
         area.removeFromTop(4);
         mappingTable.setBounds(area.reduced(2));
@@ -99,7 +121,7 @@ public:
         cachedLyrics = songModel.getLyrics();
         auto sections = songModel.getSections();
 
-        // Rebuild bulk text with section markers
+        // Rebuild bulk text with section markers and break directives
         juce::String fullText;
         int lastSectionIdx = -1;
         for (const auto& line : cachedLyrics)
@@ -114,7 +136,16 @@ public:
             }
             if (fullText.isNotEmpty())
                 fullText += "\n";
-            fullText += line.text;
+
+            if (line.isBreak)
+            {
+                double breakLen = line.endBar - line.startBar;
+                fullText += "[break: " + juce::String(breakLen, 1) + "]";
+            }
+            else
+            {
+                fullText += line.text;
+            }
         }
         bulkEditor.setText(fullText, false);
 
@@ -139,47 +170,115 @@ public:
             return;
 
         const auto& line = cachedLyrics[static_cast<size_t>(rowNumber)];
-        g.setColour(juce::Colours::white);
         g.setFont(juce::Font(juce::FontOptions(14.0f)));
 
         juce::String text;
-        switch (columnId)
+        if (lengthMode)
         {
-            case 1: text = line.text; break;
-            case 2: text = juce::String(line.startBar, 1); break;
-            case 3: text = juce::String(line.endBar, 1); break;
-            default: break;
+            switch (columnId)
+            {
+                case 1:
+                    if (line.isBreak)
+                    {
+                        g.setColour(juce::Colour(0xffff9800));
+                        text = "-- BREAK --";
+                    }
+                    else
+                    {
+                        g.setColour(juce::Colours::white);
+                        text = line.text;
+                    }
+                    break;
+                case 2:
+                {
+                    g.setColour(juce::Colours::white);
+                    double len = line.endBar - line.startBar;
+                    text = juce::String(len, 1) + " bars";
+                    break;
+                }
+                default: break;
+            }
         }
-        g.drawText(text, 4, 0, width - 8, height, juce::Justification::centredLeft);
+        else
+        {
+            g.setColour(line.isBreak ? juce::Colour(0xffff9800) : juce::Colours::white);
+            switch (columnId)
+            {
+                case 1: text = line.isBreak ? "-- BREAK --" : line.text; break;
+                case 2: text = juce::String(line.startBar, 1); break;
+                case 3: text = juce::String(line.endBar, 1); break;
+                default: break;
+            }
+        }
+
+        g.drawText(text, 4, 0, width - 8, height,
+                   (columnId == 1 && !line.isBreak && Theme::isRtlText(text))
+                       ? juce::Justification::centredRight
+                       : juce::Justification::centredLeft);
     }
 
     void cellDoubleClicked(int rowNumber, int columnId, const juce::MouseEvent&) override
     {
-        if ((columnId == 2 || columnId == 3) && rowNumber >= 0 && rowNumber < (int)cachedLyrics.size())
+        if (rowNumber < 0 || rowNumber >= (int)cachedLyrics.size())
+            return;
+
+        bool canEdit = false;
+        if (lengthMode)
+            canEdit = (columnId == 2);  // Length column
+        else
+            canEdit = (columnId == 2 || columnId == 3);  // Start/End columns
+
+        if (!canEdit)
+            return;
+
+        editingRow = rowNumber;
+        editingCol = columnId;
+
+        auto cellBounds = mappingTable.getCellPosition(columnId, rowNumber, true);
+
+        inlineEditor = std::make_unique<juce::TextEditor>();
+        inlineEditor->setColour(juce::TextEditor::backgroundColourId, juce::Colour(0xff444444));
+        inlineEditor->setColour(juce::TextEditor::textColourId, juce::Colours::white);
+        inlineEditor->setFont(juce::Font(juce::FontOptions(14.0f)));
+
+        const auto& line = cachedLyrics[static_cast<size_t>(rowNumber)];
+        if (lengthMode)
         {
-            editingRow = rowNumber;
-            editingCol = columnId;
-
-            auto cellBounds = mappingTable.getCellPosition(columnId, rowNumber, true);
-
-            inlineEditor = std::make_unique<juce::TextEditor>();
-            inlineEditor->setColour(juce::TextEditor::backgroundColourId, juce::Colour(0xff444444));
-            inlineEditor->setColour(juce::TextEditor::textColourId, juce::Colours::white);
-            inlineEditor->setFont(juce::Font(juce::FontOptions(14.0f)));
-
-            const auto& line = cachedLyrics[static_cast<size_t>(rowNumber)];
+            double len = line.endBar - line.startBar;
+            inlineEditor->setText(juce::String(len, 1));
+        }
+        else
+        {
             inlineEditor->setText(columnId == 2 ? juce::String(line.startBar, 1)
                                                 : juce::String(line.endBar, 1));
-
-            inlineEditor->setBounds(cellBounds);
-            inlineEditor->onReturnKey = [this] { commitInlineEdit(); };
-            inlineEditor->onFocusLost = [this] { commitInlineEdit(); };
-            mappingTable.addAndMakeVisible(*inlineEditor);
-            inlineEditor->grabKeyboardFocus();
         }
+
+        inlineEditor->setBounds(cellBounds);
+        inlineEditor->onReturnKey = [this] { commitInlineEdit(); };
+        inlineEditor->onFocusLost = [this] { commitInlineEdit(); };
+        mappingTable.addAndMakeVisible(*inlineEditor);
+        inlineEditor->grabKeyboardFocus();
     }
 
 private:
+    void updateEditorJustification()
+    {
+        auto text = bulkEditor.getText();
+        auto lines = juce::StringArray::fromLines(text);
+        bool hasRtl = false;
+        for (const auto& line : lines)
+        {
+            auto trimmed = line.trim();
+            if (trimmed.isNotEmpty() && Theme::isRtlText(trimmed))
+            {
+                hasRtl = true;
+                break;
+            }
+        }
+        bulkEditor.setJustification(hasRtl ? juce::Justification::topRight
+                                           : juce::Justification::topLeft);
+    }
+
     // Checks if a line is a section marker like [Verse 1] or [Chorus]
     static bool isSectionMarker(const juce::String& line, juce::String& outName)
     {
@@ -271,6 +370,14 @@ private:
             double breakBars = 0.0;
             if (isBreakDirective(trimmed, breakBars))
             {
+                LyricLine bl;
+                bl.text = "";
+                bl.startBar = bar;
+                bl.endBar = bar + breakBars;
+                bl.sectionIndex = currentSectionIdx;
+                bl.isBreak = true;
+                newLyrics.push_back(bl);
+
                 bar += breakBars;
                 continue;
             }
@@ -355,12 +462,30 @@ private:
         double val = inlineEditor->getText().getDoubleValue();
         auto& line = cachedLyrics[static_cast<size_t>(editingRow)];
 
-        if (editingCol == 2)
-            line.startBar = juce::jmax(1.0, val);
-        else if (editingCol == 3)
-            line.endBar = juce::jmax(line.startBar, val);
+        if (lengthMode)
+        {
+            // Column 2 = Length: adjust endBar = startBar + length
+            double newLen = juce::jmax(0.5, val);
+            double oldLen = line.endBar - line.startBar;
+            double delta = newLen - oldLen;
+            line.endBar = line.startBar + newLen;
 
-        songModel.updateLyricLine(editingRow, line);
+            // Shift all subsequent lines by the delta
+            for (size_t j = static_cast<size_t>(editingRow) + 1; j < cachedLyrics.size(); ++j)
+            {
+                cachedLyrics[j].startBar += delta;
+                cachedLyrics[j].endBar += delta;
+            }
+        }
+        else
+        {
+            if (editingCol == 2)
+                line.startBar = juce::jmax(1.0, val);
+            else if (editingCol == 3)
+                line.endBar = juce::jmax(line.startBar, val);
+        }
+
+        songModel.setLyrics(cachedLyrics);
         inlineEditor.reset();
         mappingTable.updateContent();
         mappingTable.repaint();
@@ -372,12 +497,82 @@ private:
     juce::TextButton parseBtn;
     juce::TextButton autoDistBtn;
     juce::TextButton clearChordsBtn;
+    juce::TextButton barModeBtn;
+    juce::TextButton addBreakBtn;
     juce::TableListBox mappingTable { "Lyrics Mapping" };
     std::vector<LyricLine> cachedLyrics;
+    bool lengthMode = false;
 
     std::unique_ptr<juce::TextEditor> inlineEditor;
     int editingRow = -1;
     int editingCol = -1;
+
+    void toggleBarMode()
+    {
+        lengthMode = !lengthMode;
+        barModeBtn.setButtonText(lengthMode ? "Start/End Mode" : "Length Mode");
+        barModeBtn.setColour(juce::TextButton::buttonColourId,
+                             lengthMode ? juce::Colour(0xff7c4dff) : juce::Colour(0xff555555));
+        addBreakBtn.setVisible(lengthMode);
+
+        // Rebuild table columns
+        auto& header = mappingTable.getHeader();
+        header.removeAllColumns();
+        if (lengthMode)
+        {
+            header.addColumn("Line",   1, 280);
+            header.addColumn("Length", 2, 100);
+        }
+        else
+        {
+            header.addColumn("Line",      1, 250);
+            header.addColumn("Start Bar", 2, 80);
+            header.addColumn("End Bar",   3, 80);
+        }
+
+        mappingTable.updateContent();
+        mappingTable.repaint();
+        resized();
+    }
+
+    void addBreak()
+    {
+        // Determine insertion point: after the last row, or after selected row
+        int insertIdx = (int)cachedLyrics.size();
+        auto selectedRow = mappingTable.getSelectedRow();
+        if (selectedRow >= 0 && selectedRow < (int)cachedLyrics.size())
+            insertIdx = selectedRow + 1;
+
+        // Determine the bar position for the new break
+        double bar = 1.0;
+        if (insertIdx > 0)
+            bar = cachedLyrics[static_cast<size_t>(insertIdx - 1)].endBar;
+
+        double breakLen = 2.0;  // default break length
+
+        LyricLine bl;
+        bl.text = "";
+        bl.startBar = bar;
+        bl.endBar = bar + breakLen;
+        bl.isBreak = true;
+
+        // Inherit section index from previous line if available
+        if (insertIdx > 0)
+            bl.sectionIndex = cachedLyrics[static_cast<size_t>(insertIdx - 1)].sectionIndex;
+
+        cachedLyrics.insert(cachedLyrics.begin() + insertIdx, bl);
+
+        // Shift all subsequent lines by the break length
+        for (size_t j = static_cast<size_t>(insertIdx) + 1; j < cachedLyrics.size(); ++j)
+        {
+            cachedLyrics[j].startBar += breakLen;
+            cachedLyrics[j].endBar += breakLen;
+        }
+
+        songModel.setLyrics(cachedLyrics);
+        mappingTable.updateContent();
+        mappingTable.repaint();
+    }
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(LyricsEditor)
 };

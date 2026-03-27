@@ -74,9 +74,13 @@ public:
         {
             const auto& line = currentLyrics[static_cast<size_t>(i)];
 
+            // Skip break entries — they are timeline spacers, not displayed
+            if (line.isBreak)
+                continue;
+
             // Check if we need to draw a section header
-            int sectionIdx = findSectionForBar(line.startBar);
-            if (sectionIdx >= 0 && sectionIdx != lastSectionDrawn)
+            int sectionIdx = line.sectionIndex;
+            if (sectionIdx >= 0 && sectionIdx < (int)currentSections.size() && sectionIdx != lastSectionDrawn)
             {
                 lastSectionDrawn = sectionIdx;
                 const auto& sec = currentSections[static_cast<size_t>(sectionIdx)];
@@ -215,6 +219,8 @@ private:
         int best = 0;
         for (int i = 0; i < (int)currentLyrics.size(); ++i)
         {
+            if (currentLyrics[static_cast<size_t>(i)].isBreak)
+                continue;
             if (currentBarPos >= currentLyrics[static_cast<size_t>(i)].startBar)
                 best = i;
             else
@@ -238,8 +244,12 @@ private:
         int lastSectionDrawn = -1;
         for (int i = 0; i <= currentLine && i < (int)currentLyrics.size(); ++i)
         {
-            int sectionIdx = findSectionForBar(currentLyrics[static_cast<size_t>(i)].startBar);
-            if (sectionIdx >= 0 && sectionIdx != lastSectionDrawn)
+            const auto& loopLine = currentLyrics[static_cast<size_t>(i)];
+            if (loopLine.isBreak)
+                continue;
+
+            int sectionIdx = loopLine.sectionIndex;
+            if (sectionIdx >= 0 && sectionIdx < (int)currentSections.size() && sectionIdx != lastSectionDrawn)
             {
                 lastSectionDrawn = sectionIdx;
                 y += sectionHeight + 4.0f;
@@ -302,20 +312,7 @@ private:
         return -1;
     }
 
-    // Simple RTL detection: check if text starts with Hebrew/Arabic Unicode range
-    static bool isRtlText(const juce::String& text)
-    {
-        for (auto c : text)
-        {
-            if (c >= 0x0590 && c <= 0x08FF)  // Hebrew, Arabic, and related blocks
-                return true;
-            if (c > 0x7F)
-                return false;  // other non-ASCII, assume LTR
-            if (c > ' ')
-                return false;  // ASCII letter, LTR
-        }
-        return false;
-    }
+    static bool isRtlText(const juce::String& text) { return Theme::isRtlText(text); }
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(TeleprompterView)
 };
