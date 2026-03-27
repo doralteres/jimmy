@@ -70,3 +70,21 @@ After modifying source files, always rebuild and verify zero warnings from `src/
 ## CI
 
 PR builds run on macOS via GitHub Actions. Release workflow auto-bumps version and creates GitHub Releases with `.vst3` artifacts. See [docs/CI_WORKFLOWS.md](docs/CI_WORKFLOWS.md).
+
+## Git Commits
+
+After completing each change, commit it following the **[Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/)** format:
+
+```
+<type>[optional scope]: <description>
+```
+
+Common types: `feat`, `fix`, `refactor`, `docs`, `chore`, `style`, `test`, `perf`.
+
+Examples:
+```
+git commit -m "feat(ui): add scroll speed control to teleprompter"
+git commit -m "fix(chord-parser): recognize diminished chords with flat-5 intervals"
+git commit -m "refactor(shared-state): expose play position as beats instead of samples"
+git commit -m "docs: update USAGE.md with new scroll speed section"
+```
