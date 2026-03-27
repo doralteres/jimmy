@@ -31,7 +31,7 @@ public:
 
         // Format hint label shown above the text editor
         formatHintLabel.setText(
-            "Sections: [Verse 1]   Break: [break: 2]   Custom length: Line text [length: 4]   Default: 2 bars/line",
+            "Sections: [Verse 1]   Break: [break: 2]   Custom length: Line text [length: 4]",
             juce::dontSendNotification);
         formatHintLabel.setFont(juce::Font(juce::FontOptions(11.0f)));
         formatHintLabel.setColour(juce::Label::textColourId, juce::Colour(0xff777777));
@@ -74,6 +74,35 @@ public:
         addBreakBtn.setVisible(false);
         addAndMakeVisible(addBreakBtn);
 
+        // Default bars per line setting
+        defaultBarsLabel.setText("Default bars/line:", juce::dontSendNotification);
+        defaultBarsLabel.setFont(juce::Font(juce::FontOptions(12.0f)));
+        defaultBarsLabel.setColour(juce::Label::textColourId, juce::Colour(0xffaaaaaa));
+        defaultBarsLabel.setJustificationType(juce::Justification::centredRight);
+        addAndMakeVisible(defaultBarsLabel);
+
+        defaultBarsEditor.setText(juce::String(songModel.getDefaultBarsPerLine(), 1), false);
+        defaultBarsEditor.setColour(juce::TextEditor::backgroundColourId, juce::Colour(0xff3a3a3a));
+        defaultBarsEditor.setColour(juce::TextEditor::textColourId, juce::Colours::white);
+        defaultBarsEditor.setFont(juce::Font(juce::FontOptions(13.0f)));
+        defaultBarsEditor.setJustification(juce::Justification::centred);
+        defaultBarsEditor.setInputRestrictions(5, "0123456789.");
+        defaultBarsEditor.onReturnKey = [this] {
+            double val = defaultBarsEditor.getText().getDoubleValue();
+            if (val > 0.0)
+            {
+                songModel.setDefaultBarsPerLine(val);
+                defaultBarsEditor.setText(juce::String(songModel.getDefaultBarsPerLine(), 1), false);
+            }
+        };
+        defaultBarsEditor.onFocusLost = [this] {
+            double val = defaultBarsEditor.getText().getDoubleValue();
+            if (val > 0.0)
+                songModel.setDefaultBarsPerLine(val);
+            defaultBarsEditor.setText(juce::String(songModel.getDefaultBarsPerLine(), 1), false);
+        };
+        addAndMakeVisible(defaultBarsEditor);
+
         // Bar mapping table
         addAndMakeVisible(mappingTable);
         mappingTable.setModel(this);
@@ -110,7 +139,13 @@ public:
 
         auto btnRow2 = area.removeFromTop(32).reduced(2);
         if (lengthMode)
+        {
             addBreakBtn.setBounds(btnRow2.removeFromLeft(120));
+            btnRow2.removeFromLeft(8);
+        }
+        defaultBarsLabel.setBounds(btnRow2.removeFromLeft(130));
+        btnRow2.removeFromLeft(4);
+        defaultBarsEditor.setBounds(btnRow2.removeFromLeft(50));
 
         area.removeFromTop(4);
         mappingTable.setBounds(area.reduced(2));
@@ -120,6 +155,8 @@ public:
     {
         cachedLyrics = songModel.getLyrics();
         auto sections = songModel.getSections();
+
+        defaultBarsEditor.setText(juce::String(songModel.getDefaultBarsPerLine(), 1), false);
 
         // Rebuild bulk text with section markers and break directives
         juce::String fullText;
@@ -342,7 +379,7 @@ private:
         std::vector<LyricLine> newLyrics;
         std::vector<Section> newSections;
         double bar = 1.0;
-        double defaultBarsPerLine = 2.0;
+        double defaultBarsPerLine = songModel.getDefaultBarsPerLine();
         int currentSectionIdx = -1;
 
         for (const auto& lineText : lines)
@@ -418,8 +455,9 @@ private:
 
         if (sections.empty())
         {
-            // No sections: distribute evenly from bar 1 to bar (2 * numLines)
-            double totalBars = cachedLyrics.size() * 2.0;
+            // No sections: distribute evenly, defaultBarsPerLine per line
+            double bpl = songModel.getDefaultBarsPerLine();
+            double totalBars = cachedLyrics.size() * bpl;
             double barsPerLine = totalBars / cachedLyrics.size();
             double bar = 1.0;
             for (size_t i = 0; i < cachedLyrics.size(); ++i)
@@ -494,6 +532,8 @@ private:
     SongModel& songModel;
     juce::TextEditor bulkEditor;
     juce::Label formatHintLabel;
+    juce::Label defaultBarsLabel;
+    juce::TextEditor defaultBarsEditor;
     juce::TextButton parseBtn;
     juce::TextButton autoDistBtn;
     juce::TextButton clearChordsBtn;

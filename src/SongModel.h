@@ -181,6 +181,19 @@ public:
         return lyrics;
     }
 
+    // --- Default bars per line ---
+    double getDefaultBarsPerLine() const
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        return defaultBarsPerLine;
+    }
+
+    void setDefaultBarsPerLine(double v)
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        defaultBarsPerLine = (v > 0.0) ? v : 1.0;
+    }
+
     // --- Serialization ---
     juce::XmlElement* toXml() const
     {
@@ -188,6 +201,7 @@ public:
 
         auto* root = new juce::XmlElement("JimmySong");
         root->setAttribute("version", 1);
+        root->setAttribute("defaultBarsPerLine", defaultBarsPerLine);
 
         auto* chordsXml = root->createNewChildElement("Chords");
         for (const auto& c : chords)
@@ -229,6 +243,8 @@ public:
             return;
 
         std::lock_guard<std::mutex> lock(mutex);
+
+        defaultBarsPerLine = root->getDoubleAttribute("defaultBarsPerLine", 2.0);
 
         chords.clear();
         if (auto* chordsXml = root->getChildByName("Chords"))
@@ -278,4 +294,5 @@ private:
     std::vector<Chord> chords;
     std::vector<Section> sections;
     std::vector<LyricLine> lyrics;
+    double defaultBarsPerLine = 2.0;
 };
