@@ -47,3 +47,25 @@ build\Jimmy_artefacts\Release\VST3\Jimmy.vst3
 ## Install
 
 See [INSTALL.md](INSTALL.md) for instructions on installing the plugin into Cubase.
+
+## Unit Tests
+
+The project uses Google Test for unit testing. Tests are opt-in via `JIMMY_BUILD_TESTS`.
+
+### macOS
+
+```bash
+cmake -B build -DJIMMY_BUILD_TESTS=ON
+cmake --build build --target JimmyTests -j$(sysctl -n hw.ncpu)
+ctest --test-dir build --output-on-failure
+```
+
+### Windows
+
+```powershell
+cmake -B build -DJIMMY_BUILD_TESTS=ON
+cmake --build build --target JimmyTests --config Release
+ctest --test-dir build --output-on-failure -C Release
+```
+
+Google Test is fetched automatically via CMake `FetchContent` — no extra dependencies needed.

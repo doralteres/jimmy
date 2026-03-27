@@ -375,24 +375,7 @@ public:
         inlineEditor->grabKeyboardFocus();
     }
 
-private:
-    void updateEditorJustification()
-    {
-        auto text = bulkEditor.getText();
-        auto lines = juce::StringArray::fromLines(text);
-        bool hasRtl = false;
-        for (const auto& line : lines)
-        {
-            auto trimmed = line.trim();
-            if (trimmed.isNotEmpty() && Theme::isRtlText(trimmed))
-            {
-                hasRtl = true;
-                break;
-            }
-        }
-        bulkEditor.setJustification(hasRtl ? juce::Justification::topRight
-                                           : juce::Justification::topLeft);
-    }
+    // --- Static parsing helpers (public for testing) ---
 
     // Checks if a line is a section marker like [Verse 1] or [Chorus]
     static bool isSectionMarker(const juce::String& line, juce::String& outName)
@@ -447,6 +430,25 @@ private:
         }
         outLength = 0.0;
         return line;
+    }
+
+private:
+    void updateEditorJustification()
+    {
+        auto text = bulkEditor.getText();
+        auto lines = juce::StringArray::fromLines(text);
+        bool hasRtl = false;
+        for (const auto& line : lines)
+        {
+            auto trimmed = line.trim();
+            if (trimmed.isNotEmpty() && Theme::isRtlText(trimmed))
+            {
+                hasRtl = true;
+                break;
+            }
+        }
+        bulkEditor.setJustification(hasRtl ? juce::Justification::topRight
+                                           : juce::Justification::topLeft);
     }
 
     void parseBulkText()

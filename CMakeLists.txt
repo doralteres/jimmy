@@ -49,3 +49,52 @@ target_link_libraries(Jimmy
         juce::juce_recommended_lto_flags
         juce::juce_recommended_warning_flags
 )
+
+# ──────────────────────────────────────────────────
+# Unit Tests (opt-in: cmake -DJIMMY_BUILD_TESTS=ON)
+# ──────────────────────────────────────────────────
+option(JIMMY_BUILD_TESTS "Build unit tests" OFF)
+
+if(JIMMY_BUILD_TESTS)
+    include(FetchContent)
+    FetchContent_Declare(
+        googletest
+        GIT_REPOSITORY https://github.com/google/googletest.git
+        GIT_TAG        v1.15.2
+    )
+    set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+    set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
+    FetchContent_MakeAvailable(googletest)
+
+    enable_testing()
+
+    add_executable(JimmyTests
+        tests/ChordParserTests.cpp
+        tests/SongModelTests.cpp
+        tests/SharedStateTests.cpp
+        tests/MidiChordImporterTests.cpp
+        tests/LyricsEditorTests.cpp
+        tests/ThemeTests.cpp
+    )
+
+    target_include_directories(JimmyTests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+
+    target_link_libraries(JimmyTests
+        PRIVATE
+            GTest::gtest_main
+            juce::juce_core
+            juce::juce_audio_basics
+            juce::juce_data_structures
+            juce::juce_graphics
+    )
+
+    target_compile_definitions(JimmyTests
+        PRIVATE
+            JUCE_STANDALONE_APPLICATION=1
+            JUCE_WEB_BROWSER=0
+            JUCE_USE_CURL=0
+    )
+
+    include(GoogleTest)
+    gtest_discover_tests(JimmyTests)
+endif()

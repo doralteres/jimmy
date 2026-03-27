@@ -51,6 +51,28 @@ cp -R build/Jimmy_artefacts/Release/VST3/Jimmy.vst3 ~/Library/Audio/Plug-Ins/VST
 
 After modifying source files, always rebuild and verify zero warnings from `src/` files.
 
+## Testing
+
+The project uses **Google Test** (fetched via CMake `FetchContent`) for unit testing. Tests live in the `tests/` directory.
+
+```bash
+# Build with tests enabled
+cmake -B build -DJIMMY_BUILD_TESTS=ON
+cmake --build build --target JimmyTests -j$(sysctl -n hw.ncpu)
+
+# Run tests
+ctest --test-dir build --output-on-failure
+```
+
+Test files follow the pattern `tests/<ComponentName>Tests.cpp` and use `TEST(ComponentName, DescriptiveTestName)` naming.
+
+### Test requirements
+
+- **Every new feature** that adds pure-logic functions (parsing, data transforms, model operations) **must include unit tests** covering the happy path and meaningful edge cases.
+- **Every bug fix must include a regression test** that reproduces the bug scenario and verifies the fix. This prevents the same issue from recurring.
+- Tests should only cover non-GUI logic — use `juce_core`, `juce_audio_basics`, `juce_data_structures`, and `juce_graphics` in tests (no `juce_gui_basics`).
+- After adding tests, rebuild and ensure all existing tests still pass before committing.
+
 ## Conventions
 
 - **Thread safety**: Audio thread writes to `SharedState` atomics. UI thread reads them. `SongModel` has its own mutex for UI-thread access — never access `SongModel` from the audio thread.

@@ -160,8 +160,7 @@ public:
 
     struct TimeSigEntry { double tick; int num; int den; };
 
-private:
-    // Convert a tick position to a 1-based bar number
+    // Convert a tick position to a 1-based bar number (public for testing)
     static double tickToBarPosition(double tick,
                                     double ticksPerQN,
                                     const std::vector<TimeSigEntry>& timeSigMap)
