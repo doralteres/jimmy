@@ -87,6 +87,13 @@ jobs:
         2. Extract the \`Jimmy.vst3\` bundle
         3. Copy it to your VST3 folder:
            - macOS: \`~/Library/Audio/Plug-Ins/VST3/\`
+        4. Remove the quarantine attribute (macOS):
+           \`\`\`bash
+           xattr -dr com.apple.quarantine ~/Library/Audio/Plug-Ins/VST3/Jimmy.vst3
+           \`\`\`
+        5. Rescan VST3 folders in Cubase: **Studio > VST Plug-in Manager**
+        
+        > **Upgrading from a previous version?** Replacing an existing \`Jimmy.vst3\` bundle may cause Cubase to fail loading the plugin due to macOS re-applying the quarantine flag. Always run the \`xattr\` command above after replacing the bundle, then rescan in Cubase.
         RELEASE_EOF
         
         echo "Generated release body:"
