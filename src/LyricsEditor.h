@@ -12,12 +12,15 @@ public:
     explicit LyricsEditor(SongModel& model)
         : songModel(model)
     {
-        // Bulk text editor
+        // Bulk text editor — refined dark surface
         bulkEditor.setMultiLine(true, true);
         bulkEditor.setReturnKeyStartsNewLine(true);
-        bulkEditor.setColour(juce::TextEditor::backgroundColourId, juce::Colour(0xff2a2a2a));
-        bulkEditor.setColour(juce::TextEditor::textColourId, juce::Colours::white);
-        bulkEditor.setFont(juce::Font(juce::FontOptions(15.0f)));
+        bulkEditor.setColour(juce::TextEditor::backgroundColourId, juce::Colour(Theme::kSurface));
+        bulkEditor.setColour(juce::TextEditor::textColourId, juce::Colour(Theme::kTextPrimary));
+        bulkEditor.setColour(juce::TextEditor::outlineColourId, juce::Colour(Theme::kBorder));
+        bulkEditor.setColour(juce::TextEditor::focusedOutlineColourId, juce::Colour(Theme::kAccentDim));
+        bulkEditor.setColour(juce::TextEditor::highlightColourId, juce::Colour(Theme::kAccent).withAlpha((uint8_t)40));
+        bulkEditor.setFont(juce::Font(juce::FontOptions(16.0f)));
         bulkEditor.setTextToShowWhenEmpty(
             "[Verse 1]\n"
             "[break: 2]\n"
@@ -25,66 +28,72 @@ public:
             "Second line [length: 3]\n\n"
             "[Chorus]\n"
             "Chorus line one",
-            juce::Colour(0xff555555));
+            juce::Colour(Theme::kTextFaded));
         bulkEditor.onTextChange = [this] { updateEditorJustification(); };
         addAndMakeVisible(bulkEditor);
 
-        // Format hint label shown above the text editor
+        // Format hint label
         formatHintLabel.setText(
-            "Sections: [Verse 1]   Break: [break: 2]   Custom length: Line text [length: 4]",
+            "Sections: [Verse 1]   Break: [break: 2]   Length: Line text [length: 4]",
             juce::dontSendNotification);
         formatHintLabel.setFont(juce::Font(juce::FontOptions(11.0f)));
-        formatHintLabel.setColour(juce::Label::textColourId, juce::Colour(0xff777777));
+        formatHintLabel.setColour(juce::Label::textColourId, juce::Colour(Theme::kTextFaded));
         formatHintLabel.setJustificationType(juce::Justification::centredLeft);
         addAndMakeVisible(formatHintLabel);
 
-        // Parse button
-        parseBtn.setButtonText("Apply Lyrics");
-        parseBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff00bcd4));
-        parseBtn.setColour(juce::TextButton::textColourOnId, juce::Colours::white);
+        // Apply Lyrics — primary accent button
+        parseBtn.setButtonText("APPLY LYRICS");
+        parseBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(Theme::kAccent));
+        parseBtn.setColour(juce::TextButton::textColourOnId, juce::Colour(Theme::kBackground));
+        parseBtn.setColour(juce::TextButton::textColourOffId, juce::Colour(Theme::kBackground));
         parseBtn.onClick = [this] { parseBulkText(); };
         addAndMakeVisible(parseBtn);
 
-        // Auto-distribute button
-        autoDistBtn.setButtonText("Auto-distribute");
-        autoDistBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff4caf50));
-        autoDistBtn.setColour(juce::TextButton::textColourOnId, juce::Colours::white);
+        // Auto-distribute — success green
+        autoDistBtn.setButtonText("AUTO-DISTRIBUTE");
+        autoDistBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(Theme::kSuccess));
+        autoDistBtn.setColour(juce::TextButton::textColourOnId, juce::Colour(Theme::kBackground));
+        autoDistBtn.setColour(juce::TextButton::textColourOffId, juce::Colour(Theme::kBackground));
         autoDistBtn.onClick = [this] { autoDistribute(); };
         addAndMakeVisible(autoDistBtn);
 
-        // Clear MIDI chords button
-        clearChordsBtn.setButtonText("Clear MIDI Chords");
-        clearChordsBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xfff44336));
-        clearChordsBtn.setColour(juce::TextButton::textColourOnId, juce::Colours::white);
+        // Clear MIDI chords — desaturated danger
+        clearChordsBtn.setButtonText("CLEAR CHORDS");
+        clearChordsBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(Theme::kDanger));
+        clearChordsBtn.setColour(juce::TextButton::textColourOnId, juce::Colour(Theme::kTextPrimary));
+        clearChordsBtn.setColour(juce::TextButton::textColourOffId, juce::Colour(Theme::kTextPrimary));
         clearChordsBtn.onClick = [this] { songModel.clearMidiChords(); };
         addAndMakeVisible(clearChordsBtn);
 
-        // Bar mode toggle button (Start/End vs Length)
-        barModeBtn.setButtonText("Length Mode");
-        barModeBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff555555));
-        barModeBtn.setColour(juce::TextButton::textColourOnId, juce::Colours::white);
+        // Bar mode toggle button (Start/End vs Length) — secondary surface
+        barModeBtn.setButtonText("LENGTH MODE");
+        barModeBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(Theme::kSurfaceLight));
+        barModeBtn.setColour(juce::TextButton::textColourOnId, juce::Colour(Theme::kTextSecondary));
+        barModeBtn.setColour(juce::TextButton::textColourOffId, juce::Colour(Theme::kTextSecondary));
         barModeBtn.onClick = [this] { toggleBarMode(); };
         addAndMakeVisible(barModeBtn);
 
-        // Add Break button (visible only in Length mode)
-        addBreakBtn.setButtonText("+ Add Break");
-        addBreakBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xffff9800));
-        addBreakBtn.setColour(juce::TextButton::textColourOnId, juce::Colours::white);
+        // Add Break button (visible only in Length mode) — accent outline style
+        addBreakBtn.setButtonText("+ ADD BREAK");
+        addBreakBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(Theme::kSurface));
+        addBreakBtn.setColour(juce::TextButton::textColourOnId, juce::Colour(Theme::kAccent));
+        addBreakBtn.setColour(juce::TextButton::textColourOffId, juce::Colour(Theme::kAccent));
         addBreakBtn.onClick = [this] { addBreak(); };
         addBreakBtn.setVisible(false);
         addAndMakeVisible(addBreakBtn);
 
         // Default bars per line setting
-        defaultBarsLabel.setText("Default bars/line:", juce::dontSendNotification);
-        defaultBarsLabel.setFont(juce::Font(juce::FontOptions(12.0f)));
-        defaultBarsLabel.setColour(juce::Label::textColourId, juce::Colour(0xffaaaaaa));
+        defaultBarsLabel.setText("Bars/line:", juce::dontSendNotification);
+        defaultBarsLabel.setFont(juce::Font(juce::FontOptions(11.0f)));
+        defaultBarsLabel.setColour(juce::Label::textColourId, juce::Colour(Theme::kTextSecondary));
         defaultBarsLabel.setJustificationType(juce::Justification::centredRight);
         addAndMakeVisible(defaultBarsLabel);
 
         defaultBarsEditor.setText(juce::String(songModel.getDefaultBarsPerLine(), 1), false);
-        defaultBarsEditor.setColour(juce::TextEditor::backgroundColourId, juce::Colour(0xff3a3a3a));
-        defaultBarsEditor.setColour(juce::TextEditor::textColourId, juce::Colours::white);
-        defaultBarsEditor.setFont(juce::Font(juce::FontOptions(13.0f)));
+        defaultBarsEditor.setColour(juce::TextEditor::backgroundColourId, juce::Colour(Theme::kSurfaceLight));
+        defaultBarsEditor.setColour(juce::TextEditor::textColourId, juce::Colour(Theme::kTextPrimary));
+        defaultBarsEditor.setColour(juce::TextEditor::outlineColourId, juce::Colour(Theme::kBorder));
+        defaultBarsEditor.setFont(juce::Font(juce::FontOptions(12.0f)));
         defaultBarsEditor.setJustification(juce::Justification::centred);
         defaultBarsEditor.setInputRestrictions(5, "0123456789.");
         defaultBarsEditor.onReturnKey = [this] {
@@ -103,18 +112,18 @@ public:
         };
         addAndMakeVisible(defaultBarsEditor);
 
-        // Bar mapping table
+        // Bar mapping table — refined dark surface
         addAndMakeVisible(mappingTable);
         mappingTable.setModel(this);
-        mappingTable.setColour(juce::ListBox::backgroundColourId, juce::Colour(0xff2a2a2a));
+        mappingTable.setColour(juce::ListBox::backgroundColourId, juce::Colour(Theme::kSurface));
         mappingTable.setRowHeight(28);
 
         auto& header = mappingTable.getHeader();
         header.addColumn("Line",      1, 250);
-        header.addColumn("Start Bar", 2, 80);
-        header.addColumn("End Bar",   3, 80);
-        header.setColour(juce::TableHeaderComponent::backgroundColourId, juce::Colour(0xff333333));
-        header.setColour(juce::TableHeaderComponent::textColourId, juce::Colours::white);
+        header.addColumn("Start Bar", 2, 90);
+        header.addColumn("End Bar",   3, 90);
+        header.setColour(juce::TableHeaderComponent::backgroundColourId, juce::Colour(Theme::kPanelBg));
+        header.setColour(juce::TableHeaderComponent::textColourId, juce::Colour(Theme::kTextSecondary));
 
         refreshFromModel();
     }
@@ -122,32 +131,37 @@ public:
     void resized() override
     {
         auto area = getLocalBounds();
-        auto topHalf = area.removeFromTop(area.getHeight() / 2);
 
-        // Format hint above the text editor
-        formatHintLabel.setBounds(topHalf.removeFromTop(18).reduced(4, 2));
-        bulkEditor.setBounds(topHalf.reduced(2));
+        // ZONE B: Primary toolbar — Apply, Auto-distribute, Default bars/line
+        auto primaryBar = area.removeFromTop(34).reduced(4, 2);
+        parseBtn.setBounds(primaryBar.removeFromLeft(120));
+        primaryBar.removeFromLeft(6);
+        autoDistBtn.setBounds(primaryBar.removeFromLeft(140));
+        primaryBar.removeFromLeft(12);
+        defaultBarsLabel.setBounds(primaryBar.removeFromLeft(70));
+        primaryBar.removeFromLeft(4);
+        defaultBarsEditor.setBounds(primaryBar.removeFromLeft(50));
 
-        auto btnRow = area.removeFromTop(32).reduced(2);
-        parseBtn.setBounds(btnRow.removeFromLeft(120));
-        btnRow.removeFromLeft(8);
-        autoDistBtn.setBounds(btnRow.removeFromLeft(140));
-        btnRow.removeFromLeft(8);
-        clearChordsBtn.setBounds(btnRow.removeFromLeft(150));
-        btnRow.removeFromLeft(8);
-        barModeBtn.setBounds(btnRow.removeFromLeft(120));
+        // ZONE C: Lyrics editor — format hint + text area (~45% of remaining)
+        auto editorHeight = (area.getHeight() * 45) / 100;
+        auto editorArea = area.removeFromTop(editorHeight);
+        formatHintLabel.setBounds(editorArea.removeFromTop(18).reduced(6, 2));
+        bulkEditor.setBounds(editorArea.reduced(4, 2));
 
-        auto btnRow2 = area.removeFromTop(32).reduced(2);
+        // ZONE D: Table toolbar — Length Mode, + Add Break, Clear MIDI Chords
+        auto tableBar = area.removeFromTop(32).reduced(4, 2);
+        barModeBtn.setBounds(tableBar.removeFromLeft(120));
+        tableBar.removeFromLeft(6);
         if (lengthMode)
         {
-            addBreakBtn.setBounds(btnRow2.removeFromLeft(120));
-            btnRow2.removeFromLeft(8);
+            addBreakBtn.setBounds(tableBar.removeFromLeft(110));
+            tableBar.removeFromLeft(6);
         }
-        defaultBarsLabel.setBounds(btnRow2.removeFromLeft(130));
-        btnRow2.removeFromLeft(4);
-        defaultBarsEditor.setBounds(btnRow2.removeFromLeft(50));
+        clearChordsBtn.setBounds(tableBar.removeFromLeft(130));
 
-        area.removeFromTop(4);
+        // ZONE E: Line table — fills remaining space
+        area.removeFromTop(2);
+        mappingTable.setBounds(area.reduced(4, 0));
         mappingTable.setBounds(area.reduced(2));
     }
 
@@ -194,12 +208,25 @@ public:
     // TableListBoxModel
     int getNumRows() override { return (int)displayIndices.size(); }
 
-    void paintRowBackground(juce::Graphics& g, int rowNumber, int, int, bool rowIsSelected) override
+    void paintRowBackground(juce::Graphics& g, int rowNumber, int width, int, bool rowIsSelected) override
     {
-        auto baseCol = rowIsSelected ? juce::Colour(0xff3a3a3a) : juce::Colour(0xff2a2a2a);
-        if (rowNumber % 2 == 0)
-            baseCol = baseCol.brighter(0.03f);
-        g.fillAll(baseCol);
+        if (rowIsSelected)
+        {
+            // Selected row: accent tint + left accent bar
+            g.fillAll(juce::Colour(Theme::kAccent).withAlpha(0.12f));
+            g.setColour(juce::Colour(Theme::kAccent));
+            g.fillRect(0, 0, 3, (int)mappingTable.getRowHeight());
+        }
+        else
+        {
+            auto baseCol = (rowNumber % 2 == 0) ? juce::Colour(Theme::kSurface)
+                                                 : juce::Colour(Theme::kSurfaceLight);
+            g.fillAll(baseCol);
+        }
+
+        // Subtle bottom border
+        g.setColour(juce::Colour(Theme::kBorder).withAlpha(0.4f));
+        g.drawHorizontalLine((int)mappingTable.getRowHeight() - 1, 0.0f, (float)width);
     }
 
     void paintCell(juce::Graphics& g, int rowNumber, int columnId, int width, int height, bool) override
@@ -211,7 +238,7 @@ public:
             return;
 
         const auto& line = cachedLyrics[static_cast<size_t>(modelIdx)];
-        g.setFont(juce::Font(juce::FontOptions(14.0f)));
+        g.setFont(juce::Font(juce::FontOptions(13.0f)));
 
         juce::String text;
         if (lengthMode)
@@ -221,18 +248,19 @@ public:
                 case 1:
                     if (line.isBreak)
                     {
-                        g.setColour(juce::Colour(0xffff9800));
+                        g.setColour(juce::Colour(Theme::kAccent));
                         text = "-- BREAK --";
                     }
                     else
                     {
-                        g.setColour(juce::Colours::white);
+                        g.setColour(juce::Colour(Theme::kTextPrimary));
+                        g.setFont(juce::Font(juce::FontOptions(14.0f)));
                         text = line.text;
                     }
                     break;
                 case 2:
                 {
-                    g.setColour(juce::Colours::white);
+                    g.setColour(juce::Colour(Theme::kTextSecondary));
                     double len = line.endBar - line.startBar;
                     text = juce::String(len, 1) + " bars";
                     break;
@@ -240,7 +268,7 @@ public:
                 case 4:
                     if (line.isBreak)
                     {
-                        g.setColour(juce::Colour(0xfff44336));
+                        g.setColour(juce::Colour(Theme::kDanger));
                         text = "X";
                     }
                     break;
@@ -249,12 +277,21 @@ public:
         }
         else
         {
-            g.setColour(juce::Colours::white);
             switch (columnId)
             {
-                case 1: text = line.text; break;
-                case 2: text = juce::String(line.startBar, 1); break;
-                case 3: text = juce::String(line.endBar, 1); break;
+                case 1:
+                    g.setColour(juce::Colour(Theme::kTextPrimary));
+                    g.setFont(juce::Font(juce::FontOptions(14.0f)));
+                    text = line.text;
+                    break;
+                case 2:
+                    g.setColour(juce::Colour(Theme::kTextSecondary));
+                    text = juce::String(line.startBar, 1);
+                    break;
+                case 3:
+                    g.setColour(juce::Colour(Theme::kTextSecondary));
+                    text = juce::String(line.endBar, 1);
+                    break;
                 default: break;
             }
         }
@@ -314,9 +351,10 @@ public:
         auto cellBounds = mappingTable.getCellPosition(columnId, rowNumber, true);
 
         inlineEditor = std::make_unique<juce::TextEditor>();
-        inlineEditor->setColour(juce::TextEditor::backgroundColourId, juce::Colour(0xff444444));
-        inlineEditor->setColour(juce::TextEditor::textColourId, juce::Colours::white);
-        inlineEditor->setFont(juce::Font(juce::FontOptions(14.0f)));
+        inlineEditor->setColour(juce::TextEditor::backgroundColourId, juce::Colour(Theme::kSurfaceLight));
+        inlineEditor->setColour(juce::TextEditor::textColourId, juce::Colour(Theme::kTextPrimary));
+        inlineEditor->setColour(juce::TextEditor::outlineColourId, juce::Colour(Theme::kAccent));
+        inlineEditor->setFont(juce::Font(juce::FontOptions(13.0f)));
 
         const auto& line = cachedLyrics[static_cast<size_t>(modelIdx)];
         if (lengthMode)
@@ -594,9 +632,16 @@ private:
     void toggleBarMode()
     {
         lengthMode = !lengthMode;
-        barModeBtn.setButtonText(lengthMode ? "Start/End Mode" : "Length Mode");
+        barModeBtn.setButtonText(lengthMode ? "START/END MODE" : "LENGTH MODE");
         barModeBtn.setColour(juce::TextButton::buttonColourId,
-                             lengthMode ? juce::Colour(0xff7c4dff) : juce::Colour(0xff555555));
+                             lengthMode ? juce::Colour(Theme::kAccentDim)
+                                        : juce::Colour(Theme::kSurfaceLight));
+        barModeBtn.setColour(juce::TextButton::textColourOnId,
+                             lengthMode ? juce::Colour(Theme::kBackground)
+                                        : juce::Colour(Theme::kTextSecondary));
+        barModeBtn.setColour(juce::TextButton::textColourOffId,
+                             lengthMode ? juce::Colour(Theme::kBackground)
+                                        : juce::Colour(Theme::kTextSecondary));
         addBreakBtn.setVisible(lengthMode);
 
         // Rebuild table columns
@@ -606,13 +651,13 @@ private:
         {
             header.addColumn("Line",   1, 250);
             header.addColumn("Length", 2, 100);
-            header.addColumn("",       4, 30);
+            header.addColumn("",       4, 36);
         }
         else
         {
             header.addColumn("Line",      1, 250);
-            header.addColumn("Start Bar", 2, 80);
-            header.addColumn("End Bar",   3, 80);
+            header.addColumn("Start Bar", 2, 90);
+            header.addColumn("End Bar",   3, 90);
         }
 
         rebuildDisplayIndices();

@@ -27,7 +27,6 @@ public:
 private:
     void timerCallback() override;
     void paintTransportBar(juce::Graphics& g, juce::Rectangle<int> area);
-    void paintChordDisplay(juce::Graphics& g, juce::Rectangle<int> area);
     void paintDropOverlay(juce::Graphics& g);
     void showHelpPopup();
     void importMidiFile(const juce::File& file);

@@ -2,6 +2,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "SongModel.h"
+#include "Theme.h"
 
 // UI component for managing song sections (Verse, Chorus, etc.)
 class SectionManager : public juce::Component,
@@ -13,8 +14,8 @@ public:
     {
         addAndMakeVisible(table);
         table.setModel(this);
-        table.setColour(juce::ListBox::backgroundColourId, juce::Colour(0xff2a2a2a));
-        table.setColour(juce::ListBox::textColourId, juce::Colours::white);
+        table.setColour(juce::ListBox::backgroundColourId, juce::Colour(Theme::kSurface));
+        table.setColour(juce::ListBox::textColourId, juce::Colour(Theme::kTextPrimary));
         table.setRowHeight(28);
 
         auto& header = table.getHeader();
@@ -22,12 +23,12 @@ public:
         header.addColumn("Start Bar", 2, 80);
         header.addColumn("End Bar",   3, 80);
         header.addColumn("",          4, 30); // delete button column
-        header.setColour(juce::TableHeaderComponent::backgroundColourId, juce::Colour(0xff333333));
-        header.setColour(juce::TableHeaderComponent::textColourId, juce::Colours::white);
+        header.setColour(juce::TableHeaderComponent::backgroundColourId, juce::Colour(Theme::kPanelBg));
+        header.setColour(juce::TableHeaderComponent::textColourId, juce::Colour(Theme::kTextSecondary));
 
         addBtn.setButtonText("+  Add Section");
-        addBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff00bcd4));
-        addBtn.setColour(juce::TextButton::textColourOnId, juce::Colours::white);
+        addBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(Theme::kAccent));
+        addBtn.setColour(juce::TextButton::textColourOnId, juce::Colour(Theme::kBackground));
         addBtn.onClick = [this] { addNewSection(); };
         addAndMakeVisible(addBtn);
 
@@ -53,10 +54,18 @@ public:
 
     void paintRowBackground(juce::Graphics& g, int rowNumber, int, int, bool rowIsSelected) override
     {
-        auto baseCol = rowIsSelected ? juce::Colour(0xff3a3a3a) : juce::Colour(0xff2a2a2a);
-        if (rowNumber % 2 == 0)
-            baseCol = baseCol.brighter(0.03f);
-        g.fillAll(baseCol);
+        if (rowIsSelected)
+        {
+            g.fillAll(juce::Colour(Theme::kAccent).withAlpha(0.12f));
+            g.setColour(juce::Colour(Theme::kAccent));
+            g.fillRect(0, 0, 3, (int)table.getRowHeight());
+        }
+        else
+        {
+            auto baseCol = (rowNumber % 2 == 0) ? juce::Colour(Theme::kSurface)
+                                                 : juce::Colour(Theme::kSurfaceLight);
+            g.fillAll(baseCol);
+        }
     }
 
     void paintCell(juce::Graphics& g, int rowNumber, int columnId, int width, int height, bool) override
@@ -65,16 +74,15 @@ public:
             return;
 
         const auto& sec = cachedSections[static_cast<size_t>(rowNumber)];
-        g.setColour(juce::Colours::white);
-        g.setFont(juce::Font(juce::FontOptions(14.0f)));
+        g.setFont(juce::Font(juce::FontOptions(13.0f)));
 
         juce::String text;
         switch (columnId)
         {
-            case 1: text = sec.name; break;
-            case 2: text = juce::String(sec.startBar); break;
-            case 3: text = juce::String(sec.endBar); break;
-            case 4: text = "X"; g.setColour(juce::Colour(0xfff44336)); break;
+            case 1: g.setColour(juce::Colour(Theme::kTextPrimary)); text = sec.name; break;
+            case 2: g.setColour(juce::Colour(Theme::kTextSecondary)); text = juce::String(sec.startBar); break;
+            case 3: g.setColour(juce::Colour(Theme::kTextSecondary)); text = juce::String(sec.endBar); break;
+            case 4: text = "X"; g.setColour(juce::Colour(Theme::kDanger)); break;
             default: break;
         }
         g.drawText(text, 4, 0, width - 8, height, juce::Justification::centredLeft);
@@ -99,9 +107,10 @@ public:
             auto cellBounds = table.getCellPosition(columnId, rowNumber, true);
 
             inlineEditor = std::make_unique<juce::TextEditor>();
-            inlineEditor->setColour(juce::TextEditor::backgroundColourId, juce::Colour(0xff444444));
-            inlineEditor->setColour(juce::TextEditor::textColourId, juce::Colours::white);
-            inlineEditor->setFont(juce::Font(juce::FontOptions(14.0f)));
+            inlineEditor->setColour(juce::TextEditor::backgroundColourId, juce::Colour(Theme::kSurfaceLight));
+            inlineEditor->setColour(juce::TextEditor::textColourId, juce::Colour(Theme::kTextPrimary));
+            inlineEditor->setColour(juce::TextEditor::outlineColourId, juce::Colour(Theme::kAccent));
+            inlineEditor->setFont(juce::Font(juce::FontOptions(13.0f)));
 
             const auto& sec = cachedSections[static_cast<size_t>(rowNumber)];
             switch (columnId)

@@ -22,7 +22,7 @@ struct Section
     juce::String name;
     int startBar = 1;
     int endBar   = 1;
-    juce::Colour colour { 0xff00bcd4 };
+    juce::Colour colour { 0xfff5a623 };  // default amber (Theme::kAccent)
 };
 
 // Represents a line of lyrics mapped to a bar range.

@@ -1,18 +1,10 @@
 #include "PluginEditor.h"
+#include "Theme.h"
 
 namespace
 {
-    const juce::Colour kBackground  (0xff1a1a1a);
-    const juce::Colour kAccent      (0xff00bcd4);
-    const juce::Colour kTextPrimary (0xffffffff);
-    const juce::Colour kTextDim     (0xffaaaaaa);
-    const juce::Colour kChordColour (0xff00e5ff);
-    const juce::Colour kPlayingGreen(0xff4caf50);
-    const juce::Colour kRecordingRed(0xfff44336);
-    const juce::Colour kPanelBg     (0xff252525);
-
-    const int kTransportBarHeight = 100;
-    const int kToolbarHeight      = 36;
+    const int kTransportBarHeight = 80;
+    const int kToolbarHeight      = 40;
 
     juce::String noteNumberToName(int noteNumber)
     {
@@ -32,14 +24,28 @@ JimmyEditor::JimmyEditor(JimmyProcessor& p)
     setResizable(true, true);
     setResizeLimits(600, 450, 2000, 1500);
 
-    // Mode toggle button
-    modeToggleBtn.setButtonText("LIVE MODE");
-    modeToggleBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff7c4dff));
-    modeToggleBtn.setColour(juce::TextButton::textColourOnId, juce::Colours::white);
+    // Mode toggle button — dominant amber accent CTA
+    modeToggleBtn.setButtonText(juce::CharPointer_UTF8("\xe2\x96\xb6 LIVE"));
+    modeToggleBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(Theme::kAccent));
+    modeToggleBtn.setColour(juce::TextButton::textColourOnId, juce::Colour(Theme::kBackground));
+    modeToggleBtn.setColour(juce::TextButton::textColourOffId, juce::Colour(Theme::kBackground));
     modeToggleBtn.onClick = [this]
     {
         currentMode = (currentMode == Mode::Edit) ? Mode::Live : Mode::Edit;
-        modeToggleBtn.setButtonText(currentMode == Mode::Edit ? "LIVE MODE" : "EDIT MODE");
+        if (currentMode == Mode::Edit)
+        {
+            modeToggleBtn.setButtonText(juce::CharPointer_UTF8("\xe2\x96\xb6 LIVE"));
+            modeToggleBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(Theme::kAccent));
+            modeToggleBtn.setColour(juce::TextButton::textColourOnId, juce::Colour(Theme::kBackground));
+            modeToggleBtn.setColour(juce::TextButton::textColourOffId, juce::Colour(Theme::kBackground));
+        }
+        else
+        {
+            modeToggleBtn.setButtonText(juce::CharPointer_UTF8("\xe2\x9c\x8e EDIT"));
+            modeToggleBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(Theme::kSurfaceLight));
+            modeToggleBtn.setColour(juce::TextButton::textColourOnId, juce::Colour(Theme::kTextSecondary));
+            modeToggleBtn.setColour(juce::TextButton::textColourOffId, juce::Colour(Theme::kTextSecondary));
+        }
         resized();
         repaint();
     };
@@ -49,19 +55,20 @@ JimmyEditor::JimmyEditor(JimmyProcessor& p)
 
     // Teleprompter + zoom controls
     addChildComponent(teleprompterView);
-    zoomInBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff333333));
-    zoomInBtn.setColour(juce::TextButton::textColourOnId, juce::Colours::white);
+    zoomInBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(Theme::kSurfaceLight));
+    zoomInBtn.setColour(juce::TextButton::textColourOnId, juce::Colour(Theme::kTextSecondary));
     zoomInBtn.onClick = [this] { teleprompterView.setFontSize(teleprompterView.getFontSize() + 4.0f); };
     addChildComponent(zoomInBtn);
 
-    zoomOutBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff333333));
-    zoomOutBtn.setColour(juce::TextButton::textColourOnId, juce::Colours::white);
+    zoomOutBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(Theme::kSurfaceLight));
+    zoomOutBtn.setColour(juce::TextButton::textColourOnId, juce::Colour(Theme::kTextSecondary));
     zoomOutBtn.onClick = [this] { teleprompterView.setFontSize(teleprompterView.getFontSize() - 4.0f); };
     addChildComponent(zoomOutBtn);
 
-    // Help button (always visible)
-    helpBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff555555));
-    helpBtn.setColour(juce::TextButton::textColourOnId, juce::Colours::white);
+    // Help button — subtle circle
+    helpBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(Theme::kSurfaceLight));
+    helpBtn.setColour(juce::TextButton::textColourOnId, juce::Colour(Theme::kTextSecondary));
+    helpBtn.setColour(juce::TextButton::textColourOffId, juce::Colour(Theme::kTextSecondary));
     helpBtn.onClick = [this] { showHelpPopup(); };
     addAndMakeVisible(helpBtn);
 
@@ -113,26 +120,17 @@ void JimmyEditor::timerCallback()
 
 void JimmyEditor::paint(juce::Graphics& g)
 {
-    g.fillAll(kBackground);
+    g.fillAll(juce::Colour(Theme::kBackground));
 
     auto area = getLocalBounds();
 
     // Transport bar at top (always visible)
     paintTransportBar(g, area.removeFromTop(kTransportBarHeight));
 
-    if (currentMode == Mode::Live)
-    {
-        // Teleprompter component handles live mode rendering
-    }
-
-    // Show chord import hint when no chords exist
-    // (rendered in paintOverChildren so it appears above child components)
-
-    // Import feedback toast
-    // (rendered in paintOverChildren)
-
-    // Drop overlay on top of everything
-    // (rendered in paintOverChildren)
+    // Toolbar separator
+    g.setColour(juce::Colour(Theme::kBorder));
+    g.drawHorizontalLine(area.getY() + kToolbarHeight - 1,
+                         (float)area.getX(), (float)area.getRight());
 }
 
 void JimmyEditor::paintOverChildren(juce::Graphics& g)
@@ -141,13 +139,13 @@ void JimmyEditor::paintOverChildren(juce::Graphics& g)
     if (currentMode == Mode::Edit && processorRef.songModel.getChords().empty() && !isDragOver && importToastCountdown <= 0)
     {
         auto hintArea = getLocalBounds().withTrimmedTop(kTransportBarHeight + kToolbarHeight);
-        auto hintBounds = hintArea.removeFromBottom(90).reduced(40, 5);
+        auto hintBounds = hintArea.removeFromBottom(70).reduced(20, 4);
 
-        g.setColour(juce::Colour(0x22ffffff));
-        g.fillRoundedRectangle(hintBounds.toFloat(), 10.0f);
+        g.setColour(juce::Colour(Theme::kSurface));
+        g.fillRoundedRectangle(hintBounds.toFloat(), 8.0f);
 
         // Dashed border
-        g.setColour(juce::Colour(Theme::kAccent).withAlpha(0.3f));
+        g.setColour(juce::Colour(Theme::kAccent).withAlpha(0.2f));
         auto r = hintBounds.toFloat().reduced(1.0f);
         for (float x = r.getX(); x < r.getRight(); x += 16.0f)
         {
@@ -162,24 +160,40 @@ void JimmyEditor::paintOverChildren(juce::Graphics& g)
             g.fillRect(r.getRight() - 1.5f, yy, 1.5f, h);
         }
 
-        g.setColour(juce::Colour(Theme::kTextDim));
-        g.setFont(juce::Font(juce::FontOptions(16.0f)));
-        g.drawText("Drag a MIDI file here to import chords", hintBounds.removeFromTop(44),
+        g.setColour(juce::Colour(Theme::kTextSecondary));
+        g.setFont(juce::Font(juce::FontOptions(14.0f)));
+        g.drawText(juce::CharPointer_UTF8("\xf0\x9f\x8e\xb5 Drag a MIDI file here to import chords"),
+                   hintBounds.removeFromTop(36),
                    juce::Justification::centredBottom);
         g.setColour(juce::Colour(Theme::kTextFaded));
-        g.setFont(juce::Font(juce::FontOptions(12.0f)));
+        g.setFont(juce::Font(juce::FontOptions(11.0f)));
         g.drawText("Cubase: Project > Chord Track > Chords to MIDI, then drag the MIDI part",
                    hintBounds, juce::Justification::centredTop);
+    }
+    // Show chord count indicator when chords are loaded (Edit mode)
+    else if (currentMode == Mode::Edit && !processorRef.songModel.getChords().empty() && !isDragOver && importToastCountdown <= 0)
+    {
+        auto indicatorArea = getLocalBounds().withTrimmedTop(kTransportBarHeight + kToolbarHeight);
+        auto indicatorBounds = indicatorArea.removeFromBottom(28).reduced(20, 4);
+
+        g.setColour(juce::Colour(Theme::kTextFaded));
+        g.setFont(juce::Font(juce::FontOptions(11.0f)));
+        auto numChords = (int)processorRef.songModel.getChords().size();
+        g.drawText(juce::String(numChords) + " chords loaded "
+                   + juce::String(juce::CharPointer_UTF8("\xe2\x9c\x93")),
+                   indicatorBounds, juce::Justification::centredRight);
     }
 
     // Import feedback toast
     if (importToastCountdown > 0 && importToastMessage.isNotEmpty())
     {
         auto toastBounds = getLocalBounds().removeFromBottom(50).reduced(40, 8);
-        g.setColour(juce::Colour(0xcc333333));
+        g.setColour(juce::Colour(Theme::kSurface).withAlpha(0.95f));
         g.fillRoundedRectangle(toastBounds.toFloat(), 6.0f);
-        g.setColour(juce::Colours::white);
-        g.setFont(juce::Font(juce::FontOptions(14.0f)));
+        g.setColour(juce::Colour(Theme::kBorder));
+        g.drawRoundedRectangle(toastBounds.toFloat(), 6.0f, 1.0f);
+        g.setColour(juce::Colour(Theme::kTextPrimary));
+        g.setFont(juce::Font(juce::FontOptions(13.0f)));
         g.drawText(importToastMessage, toastBounds, juce::Justification::centred);
     }
 
@@ -190,43 +204,54 @@ void JimmyEditor::paintOverChildren(juce::Graphics& g)
 
 void JimmyEditor::paintTransportBar(juce::Graphics& g, juce::Rectangle<int> area)
 {
-    g.setColour(kPanelBg);
+    g.setColour(juce::Colour(Theme::kPanelBg));
     g.fillRect(area);
 
-    auto inner = area.reduced(12, 8);
+    auto inner = area.reduced(12, 6);
 
-    // Status indicator (left side)
+    // Status indicator (left side) — circle glyph + chord
     auto statusArea = inner.removeFromLeft(100);
+
+    // Status circle + label
+    auto statusRow = statusArea.removeFromTop(22);
     juce::String statusText;
+    juce::Colour statusColour;
     if (displayIsRecording)
     {
-        g.setColour(kRecordingRed);
+        statusColour = juce::Colour(Theme::kRecordingRed);
         statusText = "REC";
     }
     else if (displayIsPlaying)
     {
-        g.setColour(kPlayingGreen);
+        statusColour = juce::Colour(Theme::kPlayingGreen);
         statusText = "PLAY";
     }
     else
     {
-        g.setColour(kTextDim);
+        statusColour = juce::Colour(Theme::kTextFaded);
         statusText = "STOP";
     }
-    g.setFont(juce::Font(juce::FontOptions(16.0f)));
-    g.drawText(statusText, statusArea.removeFromTop(24), juce::Justification::centredLeft);
+    // Draw status circle
+    g.setColour(statusColour);
+    float circleY = statusRow.getY() + (statusRow.getHeight() - 8) / 2.0f;
+    if (displayIsRecording || displayIsPlaying)
+        g.fillEllipse(statusRow.getX() + 0.0f, circleY, 8.0f, 8.0f);
+    else
+        g.drawEllipse(statusRow.getX() + 0.0f, circleY, 8.0f, 8.0f, 1.5f);
+
+    g.setFont(juce::Font(juce::FontOptions(12.0f)));
+    g.drawText(statusText, statusRow.withTrimmedLeft(14), juce::Justification::centredLeft);
 
     // Current chord in transport bar
     if (displayCurrentChord.isNotEmpty())
     {
-        g.setColour(kChordColour);
-        g.setFont(juce::Font(juce::FontOptions(24.0f)));
+        g.setColour(juce::Colour(Theme::kChordColour));
+        g.setFont(juce::Font(juce::FontOptions(22.0f)));
         g.drawText(displayCurrentChord, statusArea, juce::Justification::centredLeft);
     }
     else if (!displayIsPlaying)
     {
-        // Hint: show drag-drop instruction when no chords and stopped
-        g.setColour(kTextDim.withAlpha(0.5f));
+        g.setColour(juce::Colour(Theme::kTextFaded));
         g.setFont(juce::Font(juce::FontOptions(11.0f)));
         g.drawText(juce::CharPointer_UTF8("\xf0\x9f\x8e\xb5 Drag .mid here"), statusArea, juce::Justification::centredLeft);
     }
@@ -236,12 +261,12 @@ void JimmyEditor::paintTransportBar(juce::Graphics& g, juce::Rectangle<int> area
     auto drawInfo = [&](int col, const juce::String& label, const juce::String& value)
     {
         auto colArea = inner.withX(inner.getX() + col * colWidth).withWidth(colWidth);
-        g.setColour(kTextDim);
-        g.setFont(juce::Font(juce::FontOptions(11.0f)));
-        g.drawText(label, colArea.removeFromTop(18), juce::Justification::centred);
-        g.setColour(kAccent);
-        g.setFont(juce::Font(juce::FontOptions(20.0f)));
-        g.drawText(value, colArea.removeFromTop(28), juce::Justification::centred);
+        g.setColour(juce::Colour(Theme::kTextSecondary));
+        g.setFont(juce::Font(juce::FontOptions(10.0f)));
+        g.drawText(label, colArea.removeFromTop(16), juce::Justification::centred);
+        g.setColour(juce::Colour(Theme::kAccent));
+        g.setFont(juce::Font(juce::FontOptions(22.0f)));
+        g.drawText(value, colArea.removeFromTop(30), juce::Justification::centred);
     };
 
     double ppqPerBeat = 4.0 / displayTimeSigDen;
@@ -256,47 +281,21 @@ void JimmyEditor::paintTransportBar(juce::Graphics& g, juce::Rectangle<int> area
     // MIDI notes (small, bottom of transport bar)
     if (!displayHeldNotes.empty())
     {
-        auto notesRow = area.withTrimmedTop(area.getHeight() - 18).reduced(12, 0);
+        auto notesRow = area.withTrimmedTop(area.getHeight() - 16).reduced(12, 0);
         int x = notesRow.getX();
-        g.setFont(juce::Font(juce::FontOptions(10.0f)));
+        g.setFont(juce::Font(juce::FontOptions(9.0f)));
         for (int note : displayHeldNotes)
         {
-            g.setColour(kChordColour.withAlpha(0.7f));
-            g.drawText(noteNumberToName(note), x, notesRow.getY(), 32, 16, juce::Justification::centredLeft);
-            x += 34;
+            g.setColour(juce::Colour(Theme::kChordColour).withAlpha(0.6f));
+            g.drawText(noteNumberToName(note), x, notesRow.getY(), 30, 14, juce::Justification::centredLeft);
+            x += 32;
             if (x > notesRow.getRight() - 40) break;
         }
     }
 
     // Bottom border
-    g.setColour(kTextDim.withAlpha(0.2f));
+    g.setColour(juce::Colour(Theme::kBorder));
     g.drawHorizontalLine(area.getBottom() - 1, (float)area.getX(), (float)area.getRight());
-}
-
-void JimmyEditor::paintChordDisplay(juce::Graphics& g, juce::Rectangle<int> area)
-{
-    // Section name
-    if (displayCurrentSection.isNotEmpty())
-    {
-        auto sectionArea = area.removeFromTop(40);
-        g.setColour(kAccent);
-        g.setFont(juce::Font(juce::FontOptions(20.0f)));
-        g.drawText(displayCurrentSection, sectionArea, juce::Justification::centred);
-    }
-
-    // Big chord name
-    if (displayCurrentChord.isNotEmpty())
-    {
-        g.setColour(kChordColour);
-        g.setFont(juce::Font(juce::FontOptions(72.0f)));
-        g.drawText(displayCurrentChord, area, juce::Justification::centred);
-    }
-    else
-    {
-        g.setColour(kTextDim.withAlpha(0.3f));
-        g.setFont(juce::Font(juce::FontOptions(28.0f)));
-        g.drawText("Waiting for chords...", area, juce::Justification::centred);
-    }
 }
 
 void JimmyEditor::resized()
@@ -304,10 +303,13 @@ void JimmyEditor::resized()
     auto area = getLocalBounds();
     area.removeFromTop(kTransportBarHeight);
 
-    // Toolbar: mode toggle + help + tabs
+    // Toolbar strip
     auto toolbar = area.removeFromTop(kToolbarHeight);
-    modeToggleBtn.setBounds(toolbar.removeFromRight(110).reduced(4));
-    helpBtn.setBounds(toolbar.removeFromRight(36).reduced(4));
+    auto toolbarInner = toolbar.reduced(6, 4);
+
+    modeToggleBtn.setBounds(toolbarInner.removeFromRight(110).reduced(2));
+    toolbarInner.removeFromRight(4);
+    helpBtn.setBounds(toolbarInner.removeFromRight(30).reduced(1));
 
     if (currentMode == Mode::Edit)
     {
@@ -326,8 +328,8 @@ void JimmyEditor::resized()
         // Zoom buttons in toolbar
         zoomOutBtn.setVisible(true);
         zoomInBtn.setVisible(true);
-        zoomOutBtn.setBounds(toolbar.removeFromLeft(36).reduced(4));
-        zoomInBtn.setBounds(toolbar.removeFromLeft(36).reduced(4));
+        zoomOutBtn.setBounds(toolbarInner.removeFromLeft(32).reduced(1));
+        zoomInBtn.setBounds(toolbarInner.removeFromLeft(32).reduced(1));
 
         teleprompterView.setVisible(true);
         teleprompterView.setBounds(area);
@@ -401,11 +403,11 @@ void JimmyEditor::importMidiFile(const juce::File& file)
 
 void JimmyEditor::paintDropOverlay(juce::Graphics& g)
 {
-    g.setColour(juce::Colour(0xaa000000));
+    g.setColour(juce::Colour(0xcc000000));
     g.fillRect(getLocalBounds());
 
     auto bounds = getLocalBounds().reduced(40);
-    g.setColour(juce::Colour(0xff00bcd4));
+    g.setColour(juce::Colour(Theme::kAccent));
 
     // Dashed border effect
     float dashLength = 12.0f;
@@ -425,8 +427,8 @@ void JimmyEditor::paintDropOverlay(juce::Graphics& g)
         g.fillRect(rect.getRight() - 2.0f, y, 2.0f, h);
     }
 
-    g.setColour(juce::Colours::white);
-    g.setFont(juce::Font(juce::FontOptions(24.0f)));
+    g.setColour(juce::Colour(Theme::kTextPrimary));
+    g.setFont(juce::Font(juce::FontOptions(22.0f)));
     g.drawText("Drop MIDI file to import chords", bounds, juce::Justification::centred);
 }
 
