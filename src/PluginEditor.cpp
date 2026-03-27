@@ -483,7 +483,7 @@ void JimmyEditor::showHelpPopup()
 
     juce::AlertWindow::showMessageBoxAsync(
         juce::MessageBoxIconType::InfoIcon,
-        "Jimmy Help",
+        juce::String("Jimmy v") + JucePlugin_VersionString + " — Help",
         helpText,
         "OK",
         this);
