@@ -137,11 +137,11 @@ void JimmyEditor::paint(juce::Graphics& g)
 
 void JimmyEditor::paintOverChildren(juce::Graphics& g)
 {
-    // Show chord import hint when no chords exist
-    if (processorRef.songModel.getChords().empty() && !isDragOver && importToastCountdown <= 0)
+    // Show chord import hint when no chords exist (Edit mode only)
+    if (currentMode == Mode::Edit && processorRef.songModel.getChords().empty() && !isDragOver && importToastCountdown <= 0)
     {
         auto hintArea = getLocalBounds().withTrimmedTop(kTransportBarHeight + kToolbarHeight);
-        auto hintBounds = hintArea.reduced(40).withHeight(80).withY(hintArea.getCentreY() - 40);
+        auto hintBounds = hintArea.removeFromBottom(90).reduced(40, 5);
 
         g.setColour(juce::Colour(0x22ffffff));
         g.fillRoundedRectangle(hintBounds.toFloat(), 10.0f);

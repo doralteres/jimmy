@@ -186,12 +186,13 @@ public:
         }
         bulkEditor.setText(fullText, false);
 
+        rebuildDisplayIndices();
         mappingTable.updateContent();
         mappingTable.repaint();
     }
 
     // TableListBoxModel
-    int getNumRows() override { return (int)cachedLyrics.size(); }
+    int getNumRows() override { return (int)displayIndices.size(); }
 
     void paintRowBackground(juce::Graphics& g, int rowNumber, int, int, bool rowIsSelected) override
     {
@@ -203,10 +204,13 @@ public:
 
     void paintCell(juce::Graphics& g, int rowNumber, int columnId, int width, int height, bool) override
     {
-        if (rowNumber < 0 || rowNumber >= (int)cachedLyrics.size())
+        if (rowNumber < 0 || rowNumber >= (int)displayIndices.size())
+            return;
+        int modelIdx = displayIndices[static_cast<size_t>(rowNumber)];
+        if (modelIdx < 0 || modelIdx >= (int)cachedLyrics.size())
             return;
 
-        const auto& line = cachedLyrics[static_cast<size_t>(rowNumber)];
+        const auto& line = cachedLyrics[static_cast<size_t>(modelIdx)];
         g.setFont(juce::Font(juce::FontOptions(14.0f)));
 
         juce::String text;
@@ -233,15 +237,22 @@ public:
                     text = juce::String(len, 1) + " bars";
                     break;
                 }
+                case 4:
+                    if (line.isBreak)
+                    {
+                        g.setColour(juce::Colour(0xfff44336));
+                        text = "X";
+                    }
+                    break;
                 default: break;
             }
         }
         else
         {
-            g.setColour(line.isBreak ? juce::Colour(0xffff9800) : juce::Colours::white);
+            g.setColour(juce::Colours::white);
             switch (columnId)
             {
-                case 1: text = line.isBreak ? "-- BREAK --" : line.text; break;
+                case 1: text = line.text; break;
                 case 2: text = juce::String(line.startBar, 1); break;
                 case 3: text = juce::String(line.endBar, 1); break;
                 default: break;
@@ -254,9 +265,38 @@ public:
                        : juce::Justification::centredLeft);
     }
 
+    void cellClicked(int rowNumber, int columnId, const juce::MouseEvent&) override
+    {
+        if (columnId == 4 && rowNumber >= 0 && rowNumber < (int)displayIndices.size())
+        {
+            int modelIdx = displayIndices[static_cast<size_t>(rowNumber)];
+            if (modelIdx >= 0 && modelIdx < (int)cachedLyrics.size()
+                && cachedLyrics[static_cast<size_t>(modelIdx)].isBreak)
+            {
+                double breakLen = cachedLyrics[static_cast<size_t>(modelIdx)].endBar
+                                - cachedLyrics[static_cast<size_t>(modelIdx)].startBar;
+                cachedLyrics.erase(cachedLyrics.begin() + modelIdx);
+
+                for (size_t j = static_cast<size_t>(modelIdx); j < cachedLyrics.size(); ++j)
+                {
+                    cachedLyrics[j].startBar -= breakLen;
+                    cachedLyrics[j].endBar -= breakLen;
+                }
+
+                songModel.setLyrics(cachedLyrics);
+                rebuildDisplayIndices();
+                mappingTable.updateContent();
+                mappingTable.repaint();
+            }
+        }
+    }
+
     void cellDoubleClicked(int rowNumber, int columnId, const juce::MouseEvent&) override
     {
-        if (rowNumber < 0 || rowNumber >= (int)cachedLyrics.size())
+        if (rowNumber < 0 || rowNumber >= (int)displayIndices.size())
+            return;
+        int modelIdx = displayIndices[static_cast<size_t>(rowNumber)];
+        if (modelIdx < 0 || modelIdx >= (int)cachedLyrics.size())
             return;
 
         bool canEdit = false;
@@ -268,7 +308,7 @@ public:
         if (!canEdit)
             return;
 
-        editingRow = rowNumber;
+        editingRow = modelIdx;
         editingCol = columnId;
 
         auto cellBounds = mappingTable.getCellPosition(columnId, rowNumber, true);
@@ -278,7 +318,7 @@ public:
         inlineEditor->setColour(juce::TextEditor::textColourId, juce::Colours::white);
         inlineEditor->setFont(juce::Font(juce::FontOptions(14.0f)));
 
-        const auto& line = cachedLyrics[static_cast<size_t>(rowNumber)];
+        const auto& line = cachedLyrics[static_cast<size_t>(modelIdx)];
         if (lengthMode)
         {
             double len = line.endBar - line.startBar;
@@ -442,6 +482,7 @@ private:
         songModel.setLyrics(newLyrics);
         songModel.setSections(newSections);
         cachedLyrics = newLyrics;
+        rebuildDisplayIndices();
         mappingTable.updateContent();
         mappingTable.repaint();
     }
@@ -485,6 +526,7 @@ private:
         }
 
         songModel.setLyrics(cachedLyrics);
+        rebuildDisplayIndices();
         mappingTable.updateContent();
         mappingTable.repaint();
     }
@@ -525,6 +567,7 @@ private:
 
         songModel.setLyrics(cachedLyrics);
         inlineEditor.reset();
+        rebuildDisplayIndices();
         mappingTable.updateContent();
         mappingTable.repaint();
     }
@@ -541,6 +584,7 @@ private:
     juce::TextButton addBreakBtn;
     juce::TableListBox mappingTable { "Lyrics Mapping" };
     std::vector<LyricLine> cachedLyrics;
+    std::vector<int> displayIndices;
     bool lengthMode = false;
 
     std::unique_ptr<juce::TextEditor> inlineEditor;
@@ -560,8 +604,9 @@ private:
         header.removeAllColumns();
         if (lengthMode)
         {
-            header.addColumn("Line",   1, 280);
+            header.addColumn("Line",   1, 250);
             header.addColumn("Length", 2, 100);
+            header.addColumn("",       4, 30);
         }
         else
         {
@@ -570,6 +615,7 @@ private:
             header.addColumn("End Bar",   3, 80);
         }
 
+        rebuildDisplayIndices();
         mappingTable.updateContent();
         mappingTable.repaint();
         resized();
@@ -610,8 +656,20 @@ private:
         }
 
         songModel.setLyrics(cachedLyrics);
+        rebuildDisplayIndices();
         mappingTable.updateContent();
         mappingTable.repaint();
+    }
+
+    void rebuildDisplayIndices()
+    {
+        displayIndices.clear();
+        for (int i = 0; i < (int)cachedLyrics.size(); ++i)
+        {
+            if (!lengthMode && cachedLyrics[static_cast<size_t>(i)].isBreak)
+                continue;
+            displayIndices.push_back(i);
+        }
     }
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(LyricsEditor)
