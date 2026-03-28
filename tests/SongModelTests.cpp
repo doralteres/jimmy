@@ -326,3 +326,157 @@ TEST(SongModel, XmlHebrewLyricsRoundTrip)
     ASSERT_EQ(lyrics.size(), 1u);
     EXPECT_EQ(lyrics[0].text, juce::String::fromUTF8("שלום עולם"));
 }
+
+// ── LiveSourceMode ──────────────────────────────────────────────────
+
+TEST(SongModel, LiveSourceModeDefault)
+{
+    SongModel m;
+    EXPECT_EQ(m.getLiveSourceMode(), LiveSourceMode::LiveInput);
+}
+
+TEST(SongModel, LiveSourceModeSetGet)
+{
+    SongModel m;
+    m.setLiveSourceMode(LiveSourceMode::FromEditor);
+    EXPECT_EQ(m.getLiveSourceMode(), LiveSourceMode::FromEditor);
+    m.setLiveSourceMode(LiveSourceMode::LiveInput);
+    EXPECT_EQ(m.getLiveSourceMode(), LiveSourceMode::LiveInput);
+}
+
+TEST(SongModel, LiveSourceModeXmlRoundTrip)
+{
+    SongModel m;
+    m.setLiveSourceMode(LiveSourceMode::FromEditor);
+    std::unique_ptr<juce::XmlElement> xml(m.toXml());
+
+    SongModel restored;
+    restored.fromXml(xml.get());
+    EXPECT_EQ(restored.getLiveSourceMode(), LiveSourceMode::FromEditor);
+}
+
+TEST(SongModel, LiveSourceModeXmlDefaultsToLiveInput)
+{
+    // An XML without liveSource attribute should default to LiveInput
+    juce::XmlElement root("JimmySong");
+    SongModel m;
+    m.setLiveSourceMode(LiveSourceMode::FromEditor);
+    m.fromXml(&root);
+    EXPECT_EQ(m.getLiveSourceMode(), LiveSourceMode::LiveInput);
+}
+
+// ── Clip operations ─────────────────────────────────────────────────
+
+static SongClip makeClip(double startBar, double endBar)
+{
+    SongClip c;
+    c.absoluteStartBar   = startBar;
+    c.absoluteEndBar     = endBar;
+    c.defaultBarsPerLine = 2.0;
+    c.bpm                = 120.0;
+    c.timeSigNum         = 4;
+    c.timeSigDen         = 4;
+    return c;
+}
+
+TEST(SongModel, AddClipSorted)
+{
+    SongModel m;
+    m.addClip(makeClip(10.0, 20.0));
+    m.addClip(makeClip(1.0, 9.0));
+    auto clips = m.getClips();
+    ASSERT_EQ(clips.size(), 2u);
+    EXPECT_DOUBLE_EQ(clips[0].absoluteStartBar, 1.0);
+    EXPECT_DOUBLE_EQ(clips[1].absoluteStartBar, 10.0);
+}
+
+TEST(SongModel, RemoveClip)
+{
+    SongModel m;
+    m.addClip(makeClip(1.0, 9.0));
+    m.addClip(makeClip(10.0, 20.0));
+    m.removeClip(0);
+    auto clips = m.getClips();
+    ASSERT_EQ(clips.size(), 1u);
+    EXPECT_DOUBLE_EQ(clips[0].absoluteStartBar, 10.0);
+}
+
+TEST(SongModel, ClearClips)
+{
+    SongModel m;
+    m.addClip(makeClip(1.0, 9.0));
+    m.clearClips();
+    EXPECT_TRUE(m.getClips().empty());
+}
+
+TEST(SongModel, GetActiveClipInRange)
+{
+    SongModel m;
+    m.addClip(makeClip(1.0, 10.0));
+    m.addClip(makeClip(15.0, 25.0));
+
+    EXPECT_EQ(m.getActiveClipIndex(5.0), 0);
+    EXPECT_EQ(m.getActiveClipIndex(20.0), 1);
+}
+
+TEST(SongModel, GetActiveClipGap)
+{
+    SongModel m;
+    m.addClip(makeClip(1.0, 10.0));
+    m.addClip(makeClip(15.0, 25.0));
+
+    // In the gap between clips
+    EXPECT_EQ(m.getActiveClipIndex(12.0), -1);
+}
+
+TEST(SongModel, GetActiveClipBoundary)
+{
+    SongModel m;
+    m.addClip(makeClip(1.0, 10.0));
+
+    // Start boundary is inclusive
+    EXPECT_EQ(m.getActiveClipIndex(1.0), 0);
+    // End boundary is exclusive
+    EXPECT_EQ(m.getActiveClipIndex(10.0), -1);
+}
+
+TEST(SongModel, GetActiveClipEmpty)
+{
+    SongModel m;
+    EXPECT_EQ(m.getActiveClipIndex(5.0), -1);
+}
+
+TEST(SongModel, ClipXmlRoundTrip)
+{
+    SongModel m;
+    SongClip clip;
+    clip.absoluteStartBar = 5.0;
+    clip.absoluteEndBar = 15.0;
+    clip.defaultBarsPerLine = 3.0;
+    clip.bpm = 140.0;
+    clip.timeSigNum = 3;
+    clip.timeSigDen = 4;
+    clip.lyrics.push_back({ "Clip lyric", 1.0, 4.0, -1, false });
+    clip.sections.push_back({ "Clip Section", 1, 8, juce::Colour(0xff4caf50) });
+    clip.chords.push_back({ "Dm", 1.0, Chord::Manual });
+    m.addClip(clip);
+
+    std::unique_ptr<juce::XmlElement> xml(m.toXml());
+    SongModel restored;
+    restored.fromXml(xml.get());
+
+    auto clips = restored.getClips();
+    ASSERT_EQ(clips.size(), 1u);
+    EXPECT_DOUBLE_EQ(clips[0].absoluteStartBar, 5.0);
+    EXPECT_DOUBLE_EQ(clips[0].absoluteEndBar, 15.0);
+    EXPECT_DOUBLE_EQ(clips[0].defaultBarsPerLine, 3.0);
+    EXPECT_NEAR(clips[0].bpm, 140.0, 0.1);
+    EXPECT_EQ(clips[0].timeSigNum, 3);
+    EXPECT_EQ(clips[0].timeSigDen, 4);
+    ASSERT_EQ(clips[0].lyrics.size(), 1u);
+    EXPECT_EQ(clips[0].lyrics[0].text, juce::String("Clip lyric"));
+    ASSERT_EQ(clips[0].sections.size(), 1u);
+    EXPECT_EQ(clips[0].sections[0].name, juce::String("Clip Section"));
+    ASSERT_EQ(clips[0].chords.size(), 1u);
+    EXPECT_EQ(clips[0].chords[0].name, juce::String("Dm"));
+}

@@ -1,5 +1,7 @@
 #include "PluginEditor.h"
 #include "Theme.h"
+#include "MidiImporter.h"
+#include "MidiExporter.h"
 
 namespace
 {
@@ -72,6 +74,25 @@ JimmyEditor::JimmyEditor(JimmyProcessor& p)
     helpBtn.onClick = [this] { showHelpPopup(); };
     addAndMakeVisible(helpBtn);
 
+    // Live source toggle button
+    liveSourceBtn.onClick = [this]
+    {
+        auto mode = processorRef.songModel.getLiveSourceMode();
+        auto newMode = (mode == LiveSourceMode::LiveInput)
+                           ? LiveSourceMode::FromEditor
+                           : LiveSourceMode::LiveInput;
+        processorRef.songModel.setLiveSourceMode(newMode);
+        processorRef.transportState.liveSourceMode.store(
+            newMode == LiveSourceMode::FromEditor ? 1 : 0,
+            std::memory_order_relaxed);
+        updateLiveSourceButton();
+    };
+    updateLiveSourceButton();
+    addAndMakeVisible(liveSourceBtn);
+
+    // Export drag zone (Edit mode)
+    addChildComponent(exportDragZone);
+
     startTimerHz(30);
 }
 
@@ -108,11 +129,62 @@ void JimmyEditor::timerCallback()
     // Feed teleprompter with current data
     if (currentMode == Mode::Live)
     {
-        teleprompterView.setSongData(
-            processorRef.songModel.getLyrics(),
-            processorRef.songModel.getChords(),
-            processorRef.songModel.getSections());
-        teleprompterView.setPosition(currentBar);
+        auto liveMode = processorRef.songModel.getLiveSourceMode();
+
+        if (liveMode == LiveSourceMode::FromEditor)
+        {
+            // Multi-clip: find active clip and use its data with relative bar
+            auto clips = processorRef.songModel.getClips();
+            int activeIdx = processorRef.songModel.getActiveClipIndex(currentBar);
+
+            if (activeIdx >= 0)
+            {
+                const auto& clip = clips[static_cast<size_t>(activeIdx)];
+                double relativeBar = currentBar - clip.absoluteStartBar + 1.0;
+
+                teleprompterView.setSongData(clip.lyrics, clip.chords, clip.sections);
+                teleprompterView.setPosition(relativeBar);
+                lastActiveClipIndex = activeIdx;
+            }
+            else if (!clips.empty())
+            {
+                // In a gap between clips — show blank
+                if (lastActiveClipIndex >= 0)
+                {
+                    teleprompterView.setSongData({}, {}, {});
+                    lastActiveClipIndex = -1;
+                }
+            }
+            else
+            {
+                // No clips — use main SongModel data (single-song "From Editor" mode)
+                teleprompterView.setSongData(
+                    processorRef.songModel.getLyrics(),
+                    processorRef.songModel.getChords(),
+                    processorRef.songModel.getSections());
+                teleprompterView.setPosition(currentBar);
+            }
+        }
+        else
+        {
+            // Live Input mode — existing behavior
+            teleprompterView.setSongData(
+                processorRef.songModel.getLyrics(),
+                processorRef.songModel.getChords(),
+                processorRef.songModel.getSections());
+            teleprompterView.setPosition(currentBar);
+        }
+    }
+
+    // Show/hide export drag zone based on whether there are lyrics
+    if (currentMode == Mode::Edit)
+    {
+        bool hasLyrics = !processorRef.songModel.getLyrics().empty();
+        if (exportDragZone.isVisible() != hasLyrics)
+        {
+            exportDragZone.setVisible(hasLyrics);
+            resized();
+        }
     }
 
     repaint();
@@ -310,6 +382,8 @@ void JimmyEditor::resized()
     modeToggleBtn.setBounds(toolbarInner.removeFromRight(110).reduced(2));
     toolbarInner.removeFromRight(4);
     helpBtn.setBounds(toolbarInner.removeFromRight(30).reduced(1));
+    toolbarInner.removeFromRight(4);
+    liveSourceBtn.setBounds(toolbarInner.removeFromRight(120).reduced(2));
 
     if (currentMode == Mode::Edit)
     {
@@ -318,12 +392,26 @@ void JimmyEditor::resized()
         zoomInBtn.setVisible(false);
         zoomOutBtn.setVisible(false);
 
+        // Export drag zone at bottom of edit area
+        bool hasLyrics = !processorRef.songModel.getLyrics().empty();
+        if (hasLyrics)
+        {
+            auto exportArea = area.removeFromBottom(44);
+            exportDragZone.setVisible(true);
+            exportDragZone.setBounds(exportArea.reduced(16, 4));
+        }
+        else
+        {
+            exportDragZone.setVisible(false);
+        }
+
         lyricsEditor.setBounds(area);
     }
     else
     {
         // Live mode: show teleprompter + zoom controls
         lyricsEditor.setVisible(false);
+        exportDragZone.setVisible(false);
 
         // Zoom buttons in toolbar
         zoomOutBtn.setVisible(true);
@@ -376,12 +464,84 @@ void JimmyEditor::filesDropped(const juce::StringArray& files, int, int)
 
 void JimmyEditor::importMidiFile(const juce::File& file)
 {
+    auto format = MidiImporter::detectFormat(file);
+
+    if (format == MidiImporter::ImportFormat::JimmyFull)
+    {
+        auto result = MidiImporter::importFull(file);
+
+        if (!result.success)
+        {
+            importToastMessage = result.errorMessage;
+            importToastCountdown = 120;
+            return;
+        }
+
+        // Check if clips already exist — offer to add as clip
+        auto existingClips = processorRef.songModel.getClips();
+        if (!existingClips.empty())
+        {
+            // Add as a new clip after the last existing clip in time
+            double maxExistingEndBar = existingClips.back().absoluteEndBar;
+            for (const auto& existingClip : existingClips)
+                maxExistingEndBar = std::max(maxExistingEndBar, existingClip.absoluteEndBar);
+
+            SongClip clip;
+            clip.absoluteStartBar = maxExistingEndBar + 1.0;
+            clip.lyrics = result.lyrics;
+            clip.sections = result.sections;
+            clip.chords = result.chords;
+            clip.defaultBarsPerLine = result.defaultBarsPerLine;
+            clip.bpm = result.bpm;
+            clip.timeSigNum = result.timeSigNum;
+            clip.timeSigDen = result.timeSigDen;
+
+            // Compute absolute end bar from lyrics/chords
+            double maxBar = 1.0;
+            for (const auto& l : clip.lyrics)
+                maxBar = std::max(maxBar, l.endBar);
+            for (const auto& c : clip.chords)
+                maxBar = std::max(maxBar, c.barPosition + 1.0);
+            clip.absoluteEndBar = clip.absoluteStartBar + maxBar - 1.0;
+
+            processorRef.songModel.addClip(clip);
+
+            importToastMessage = "Added clip at bar " + juce::String((int)clip.absoluteStartBar)
+                                 + " (" + juce::String((int)result.lyrics.size()) + " lines, "
+                                 + juce::String((int)result.chords.size()) + " chords)";
+        }
+        else
+        {
+            // First import — replace SongModel data directly
+            processorRef.songModel.setLyrics(result.lyrics);
+            processorRef.songModel.setSections(result.sections);
+
+            // Replace all chords (clear existing, add imported)
+            processorRef.songModel.clearMidiChords();
+            for (const auto& chord : result.chords)
+                processorRef.songModel.addChord(chord);
+
+            processorRef.songModel.setDefaultBarsPerLine(result.defaultBarsPerLine);
+
+            // Refresh the lyrics editor UI
+            lyricsEditor.refreshFromModel();
+
+            importToastMessage = "Imported full song: " + juce::String((int)result.lyrics.size()) + " lines, "
+                                 + juce::String((int)result.chords.size()) + " chords, "
+                                 + juce::String((int)result.sections.size()) + " sections";
+        }
+
+        importToastCountdown = 120;
+        return;
+    }
+
+    // Chord-only fallback (plain MIDI)
     auto result = MidiChordImporter::importFromFile(file);
 
     if (!result.success)
     {
         importToastMessage = result.errorMessage;
-        importToastCountdown = 120;  // ~4 seconds at 30Hz
+        importToastCountdown = 120;
         return;
     }
 
@@ -429,7 +589,83 @@ void JimmyEditor::paintDropOverlay(juce::Graphics& g)
 
     g.setColour(juce::Colour(Theme::kTextPrimary));
     g.setFont(juce::Font(juce::FontOptions(22.0f)));
-    g.drawText("Drop MIDI file to import chords", bounds, juce::Justification::centred);
+    g.drawText("Drop MIDI file to import", bounds, juce::Justification::centred);
+}
+
+void JimmyEditor::updateLiveSourceButton()
+{
+    auto mode = processorRef.songModel.getLiveSourceMode();
+    if (mode == LiveSourceMode::LiveInput)
+    {
+        liveSourceBtn.setButtonText("LIVE INPUT");
+        liveSourceBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(Theme::kAccentDim));
+        liveSourceBtn.setColour(juce::TextButton::textColourOnId, juce::Colour(Theme::kTextPrimary));
+        liveSourceBtn.setColour(juce::TextButton::textColourOffId, juce::Colour(Theme::kTextPrimary));
+    }
+    else
+    {
+        liveSourceBtn.setButtonText("FROM EDITOR");
+        liveSourceBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(Theme::kPlayingGreen));
+        liveSourceBtn.setColour(juce::TextButton::textColourOnId, juce::Colour(Theme::kBackground));
+        liveSourceBtn.setColour(juce::TextButton::textColourOffId, juce::Colour(Theme::kBackground));
+    }
+    repaint();
+}
+
+// ── ExportDragZone ──
+
+void JimmyEditor::ExportDragZone::paint(juce::Graphics& g)
+{
+    auto bounds = getLocalBounds().toFloat();
+
+    g.setColour(juce::Colour(Theme::kSurface));
+    g.fillRoundedRectangle(bounds, 6.0f);
+
+    // Dashed border in accent color
+    g.setColour(juce::Colour(Theme::kAccent).withAlpha(0.4f));
+    float dashLen = 10.0f, gapLen = 6.0f;
+    auto r = bounds.reduced(1.0f);
+    for (float x = r.getX(); x < r.getRight(); x += dashLen + gapLen)
+    {
+        float w = std::min(dashLen, r.getRight() - x);
+        g.fillRect(x, r.getY(), w, 1.5f);
+        g.fillRect(x, r.getBottom() - 1.5f, w, 1.5f);
+    }
+    for (float y = r.getY(); y < r.getBottom(); y += dashLen + gapLen)
+    {
+        float h = std::min(dashLen, r.getBottom() - y);
+        g.fillRect(r.getX(), y, 1.5f, h);
+        g.fillRect(r.getRight() - 1.5f, y, 1.5f, h);
+    }
+
+    g.setColour(juce::Colour(Theme::kAccent));
+    g.setFont(juce::Font(juce::FontOptions(13.0f)));
+    g.drawText(juce::CharPointer_UTF8("Drag to track \xe2\x86\x97"),
+               getLocalBounds(), juce::Justification::centred);
+}
+
+void JimmyEditor::ExportDragZone::mouseDown(const juce::MouseEvent&)
+{
+    // Serialize SongModel to a temp MIDI file
+    MidiExporter::ExportContext ctx;
+    ctx.bpm = editor.displayBpm;
+    ctx.timeSigNum = editor.displayTimeSigNum;
+    ctx.timeSigDen = editor.displayTimeSigDen;
+
+    auto tempDir = juce::File::getSpecialLocation(juce::File::tempDirectory);
+    tempExportFile = tempDir.getChildFile("jimmy_export.mid");
+    MidiExporter::writeToFile(editor.processorRef.songModel, ctx, tempExportFile);
+    dragStarted = false;
+}
+
+void JimmyEditor::ExportDragZone::mouseDrag(const juce::MouseEvent& e)
+{
+    if (!dragStarted && tempExportFile.existsAsFile() && e.getDistanceFromDragStart() > 4)
+    {
+        dragStarted = true;
+        juce::DragAndDropContainer::performExternalDragDropOfFiles(
+            { tempExportFile.getFullPathName() }, false);
+    }
 }
 
 void JimmyEditor::showHelpPopup()
@@ -465,7 +701,7 @@ void JimmyEditor::showHelpPopup()
         "track. Chords are detected automatically and displayed\n"
         "above lyrics in Live Mode.\n\n"
 
-        "IMPORTING CHORDS FROM MIDI\n"
+        "IMPORTING FROM MIDI\n"
         "To import all chords at once:\n"
         "1. In Cubase: Project > Chord Track > Chords to MIDI\n"
         "2. Drag the resulting MIDI part from the arrangement\n"
@@ -473,6 +709,27 @@ void JimmyEditor::showHelpPopup()
         "3. Or export a .mid file and drag that onto the window\n"
         "All chords will be placed at their correct bar positions.\n"
         "Use 'Clear MIDI Chords' in Edit mode to remove them.\n\n"
+
+        "EXPORTING TO MIDI\n"
+        "When lyrics are loaded, a 'Drag to track' zone appears at\n"
+        "the bottom of Edit Mode. Drag it onto your Cubase MIDI or\n"
+        "Instrument track to create a Jimmy-encoded MIDI clip.\n"
+        "This clip contains all lyrics, chords, sections and timing.\n\n"
+
+        "LIVE SOURCE TOGGLE\n"
+        "The toolbar has a 'LIVE INPUT' / 'FROM EDITOR' toggle:\n"
+        "- LIVE INPUT: chords come from real-time MIDI input\n"
+        "- FROM EDITOR: chords and lyrics come from imported data,\n"
+        "  using the DAW transport position for timeline sync.\n"
+        "  Use this mode with exported MIDI clips for a fully\n"
+        "  pre-programmed live show setup.\n\n"
+
+        "MULTI-SONG SETLIST\n"
+        "Export multiple songs as MIDI clips and place them\n"
+        "sequentially on the same Cubase track. In 'FROM EDITOR'\n"
+        "mode, Jimmy automatically detects which clip is playing\n"
+        "and displays the correct song data. Gaps between clips\n"
+        "show a blank display.\n\n"
 
         "LIVE MODE\n"
         "Click 'LIVE MODE' to switch to the teleprompter view.\n"

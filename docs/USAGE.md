@@ -37,7 +37,54 @@ Jimmy will parse all the MIDI notes, identify the chords, and place them at thei
 
 **Tip:** Use the **Clear MIDI Chords** button in Edit mode (Lyrics tab) to remove imported/captured chords before re-importing.
 
-### 2c. Chord display in Live Mode
+### 2c. Import full song data from MIDI
+
+If the MIDI file was exported from Jimmy (contains the `JIMMY:v1` marker), **all song data** is restored — lyrics, sections, chords, timing, and per-line overrides. This is the recommended way to transfer songs between Cubase projects.
+
+1. Export from Jimmy using the **"Drag to track ↗"** zone (see below)
+2. Drag the exported MIDI part or file back onto Jimmy's window
+3. Jimmy detects the marker and imports the full song state
+
+If you already have clips loaded, the new data is added as a **new clip** after the last one.
+
+### 2d. Exporting to MIDI
+
+When lyrics are loaded in Edit Mode, a **"Drag to track ↗"** zone appears at the bottom of the editor. This lets you export all Jimmy data as a standard MIDI file:
+
+1. Click and drag the export zone onto your Cubase MIDI or Instrument track
+2. Cubase creates a MIDI clip containing your lyrics, chords, sections, and timing
+3. The clip is self-contained — it works in any project when dropped back onto Jimmy
+
+The exported file uses:
+- **Lyric Meta Events** (RP-017) for lyrics text
+- **Text Meta Events** for chords (`CHORD:Am`), sections (`SECTION:Verse`), and metadata
+- **Tempo and time signature** matching your current project settings
+
+### 2e. Live Source Toggle
+
+The toolbar features a **LIVE INPUT / FROM EDITOR** toggle button:
+
+- **LIVE INPUT** (default) — chords come from real-time MIDI input, detected by Jimmy's chord parser. The transport position drives lyric scrolling.
+- **FROM EDITOR** — chords and lyrics come entirely from the pre-loaded data in the editor. The plugin reads only the DAW transport bar position to determine which lyric line and chord to display. No MIDI chord parsing occurs, reducing audio thread load.
+
+Use **FROM EDITOR** mode when you've imported or entered all your chord and lyric data and want a fully pre-programmed display.
+
+### 2f. Multi-Song Setlist
+
+You can set up a full live show with multiple songs on a single Cubase track:
+
+1. Enter lyrics and chords for Song 1 → export using "Drag to track"
+2. Clear the editor, enter Song 2 → export to the same track, placed after Song 1
+3. Repeat for all songs in your setlist
+
+Each exported MIDI clip is **self-contained** with its own lyrics, chords, sections, and timing. In **FROM EDITOR** mode, Jimmy automatically:
+
+- Detects which clip is currently playing based on the transport position
+- Displays the correct song data with bar positions relative to each clip
+- Shows a blank display during gaps between clips
+- Transitions cleanly between songs with no manual intervention
+
+### 2g. Chord display in Live Mode
 
 In Live Mode, **all chords** are shown above each lyric line at their proportional position within the line's bar range. This means:
 

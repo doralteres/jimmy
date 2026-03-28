@@ -67,8 +67,12 @@ void JimmyProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBu
         }
     }
 
-    // Process MIDI messages
+    // Process MIDI messages (only in Live Input mode)
     bool notesChanged = false;
+    constexpr int kLiveInputMode = static_cast<int>(LiveSourceMode::LiveInput);
+    int liveMode = transportState.liveSourceMode.load(std::memory_order_relaxed);
+    if (liveMode == kLiveInputMode)
+    {
     for (const auto metadata : midiMessages)
     {
         const auto msg = metadata.getMessage();
@@ -96,9 +100,10 @@ void JimmyProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBu
             transportState.programChangeFlag.store(true, std::memory_order_relaxed);
         }
     }
+    } // end LiveInput mode
 
-    // Detect chord from held MIDI notes
-    if (notesChanged)
+    // Detect chord from held MIDI notes (only in Live Input mode)
+    if (notesChanged && liveMode == kLiveInputMode)
     {
         auto heldNotes = midiNoteState.getHeldNotes();
         if (!heldNotes.empty())
@@ -135,6 +140,11 @@ void JimmyProcessor::setStateInformation(const void* data, int sizeInBytes)
 {
     std::unique_ptr<juce::XmlElement> xml(getXmlFromBinary(data, sizeInBytes));
     songModel.fromXml(xml.get());
+
+    // Sync live source mode to audio thread
+    transportState.liveSourceMode.store(
+        songModel.getLiveSourceMode() == LiveSourceMode::FromEditor ? 1 : 0,
+        std::memory_order_relaxed);
 }
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()

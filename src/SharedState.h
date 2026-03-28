@@ -18,6 +18,10 @@ struct TransportState
     std::atomic<bool>    isRecording   { false };
     std::atomic<int>     lastProgramChange { -1 };
     std::atomic<bool>    programChangeFlag { false };
+
+    // Live source mode: 0 = LiveInput (default), 1 = FromEditor
+    // UI thread writes, audio thread reads
+    std::atomic<int>     liveSourceMode { 0 };
 };
 
 // Stores currently held MIDI notes (lock-free via atomic flags).

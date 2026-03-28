@@ -75,6 +75,8 @@ if(JIMMY_BUILD_TESTS)
         tests/MidiChordImporterTests.cpp
         tests/LyricsEditorTests.cpp
         tests/ThemeTests.cpp
+        tests/MidiExporterTests.cpp
+        tests/MidiImporterTests.cpp
     )
 
     target_include_directories(JimmyTests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)

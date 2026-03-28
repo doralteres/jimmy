@@ -4,9 +4,12 @@
 #include "LyricsEditor.h"
 #include "TeleprompterView.h"
 #include "MidiChordImporter.h"
+#include "MidiImporter.h"
+#include "MidiExporter.h"
 #include <juce_gui_extra/juce_gui_extra.h>
 
 class JimmyEditor : public juce::AudioProcessorEditor,
+                    public juce::DragAndDropContainer,
                     public juce::FileDragAndDropTarget,
                     private juce::Timer
 {
@@ -28,8 +31,10 @@ private:
     void timerCallback() override;
     void paintTransportBar(juce::Graphics& g, juce::Rectangle<int> area);
     void paintDropOverlay(juce::Graphics& g);
+    void paintExportDragZone(juce::Graphics& g, juce::Rectangle<int> area);
     void showHelpPopup();
     void importMidiFile(const juce::File& file);
+    void updateLiveSourceButton();
 
     JimmyProcessor& processorRef;
 
@@ -38,8 +43,26 @@ private:
     Mode currentMode = Mode::Edit;
     juce::TextButton modeToggleBtn;
 
+    // Live source toggle
+    juce::TextButton liveSourceBtn;
+
     // Edit mode components
     LyricsEditor   lyricsEditor;
+
+    // Export drag zone (Edit mode)
+    class ExportDragZone : public juce::Component
+    {
+    public:
+        ExportDragZone(JimmyEditor& owner) : editor(owner) {}
+        void paint(juce::Graphics& g) override;
+        void mouseDown(const juce::MouseEvent& e) override;
+        void mouseDrag(const juce::MouseEvent& e) override;
+    private:
+        JimmyEditor& editor;
+        juce::File tempExportFile;
+        bool dragStarted = false;
+    };
+    ExportDragZone exportDragZone { *this };
 
     // Live mode components
     TeleprompterView teleprompterView;
@@ -59,6 +82,9 @@ private:
     std::vector<int> displayHeldNotes;
     juce::String displayCurrentChord;
     juce::String displayCurrentSection;
+
+    // Multi-clip tracking (for "From Editor" mode)
+    int lastActiveClipIndex = -1;
 
     // Drag-and-drop state
     bool isDragOver = false;

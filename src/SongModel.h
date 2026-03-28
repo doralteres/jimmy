@@ -7,6 +7,9 @@
 #include <mutex>
 #include <algorithm>
 
+// Whether chords come from live MIDI input or from pre-loaded editor data.
+enum class LiveSourceMode { LiveInput, FromEditor };
+
 // Represents a chord at a specific timeline position.
 struct Chord
 {
@@ -34,6 +37,21 @@ struct LyricLine
     double endBar   = 2.0;
     int sectionIndex = -1;  // optional link to a Section
     bool isBreak = false;   // true = timeline break (no lyrics displayed)
+};
+
+// A self-contained song clip for multi-song setlist support.
+// Each clip has its own lyrics, chords, sections, and timing.
+struct SongClip
+{
+    double absoluteStartBar = 1.0;
+    double absoluteEndBar   = 1.0;
+    std::vector<LyricLine> lyrics;
+    std::vector<Section>   sections;
+    std::vector<Chord>     chords;
+    double defaultBarsPerLine = 2.0;
+    double bpm        = 120.0;
+    int    timeSigNum  = 4;
+    int    timeSigDen  = 4;
 };
 
 // The complete song data model. Thread-safe via mutex for UI thread access.
@@ -195,6 +213,61 @@ public:
         defaultBarsPerLine = (v > 0.0) ? v : 1.0;
     }
 
+    // --- Live source mode ---
+    LiveSourceMode getLiveSourceMode() const
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        return liveSourceMode;
+    }
+
+    void setLiveSourceMode(LiveSourceMode mode)
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        liveSourceMode = mode;
+    }
+
+    // --- Clip operations (multi-song setlist) ---
+    void addClip(const SongClip& clip)
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        clips.push_back(clip);
+        std::sort(clips.begin(), clips.end(),
+                  [](const SongClip& a, const SongClip& b) { return a.absoluteStartBar < b.absoluteStartBar; });
+    }
+
+    void removeClip(int index)
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        if (index >= 0 && index < (int)clips.size())
+            clips.erase(clips.begin() + index);
+    }
+
+    std::vector<SongClip> getClips() const
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        return clips;
+    }
+
+    void clearClips()
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        clips.clear();
+    }
+
+    // Returns a pointer to the active clip at a given absolute bar, or nullptr for gaps.
+    // Caller must hold the returned data only briefly (copy if needed).
+    int getActiveClipIndex(double absoluteBar) const
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        for (int i = 0; i < (int)clips.size(); ++i)
+        {
+            if (absoluteBar >= clips[static_cast<size_t>(i)].absoluteStartBar &&
+                absoluteBar < clips[static_cast<size_t>(i)].absoluteEndBar)
+                return i;
+        }
+        return -1;
+    }
+
     // --- Serialization ---
     juce::XmlElement* toXml() const
     {
@@ -203,6 +276,7 @@ public:
         auto* root = new juce::XmlElement("JimmySong");
         root->setAttribute("version", 1);
         root->setAttribute("defaultBarsPerLine", defaultBarsPerLine);
+        root->setAttribute("liveSource", liveSourceMode == LiveSourceMode::FromEditor ? "editor" : "live");
 
         auto* chordsXml = root->createNewChildElement("Chords");
         for (const auto& c : chords)
@@ -235,6 +309,53 @@ public:
                 el->setAttribute("isBreak", true);
         }
 
+        // Clips
+        if (!clips.empty())
+        {
+            auto* clipsXml = root->createNewChildElement("Clips");
+            for (const auto& clip : clips)
+            {
+                auto* clipEl = clipsXml->createNewChildElement("Clip");
+                clipEl->setAttribute("absoluteStart", clip.absoluteStartBar);
+                clipEl->setAttribute("absoluteEnd", clip.absoluteEndBar);
+                clipEl->setAttribute("defaultBarsPerLine", clip.defaultBarsPerLine);
+                clipEl->setAttribute("bpm", clip.bpm);
+                clipEl->setAttribute("timeSigNum", clip.timeSigNum);
+                clipEl->setAttribute("timeSigDen", clip.timeSigDen);
+
+                auto* cChords = clipEl->createNewChildElement("Chords");
+                for (const auto& c : clip.chords)
+                {
+                    auto* el = cChords->createNewChildElement("Chord");
+                    el->setAttribute("name", c.name);
+                    el->setAttribute("bar", c.barPosition);
+                    el->setAttribute("source", c.source == Chord::Manual ? "manual" : "midi");
+                }
+
+                auto* cSections = clipEl->createNewChildElement("Sections");
+                for (const auto& s : clip.sections)
+                {
+                    auto* el = cSections->createNewChildElement("Section");
+                    el->setAttribute("name", s.name);
+                    el->setAttribute("startBar", s.startBar);
+                    el->setAttribute("endBar", s.endBar);
+                    el->setAttribute("colour", s.colour.toString());
+                }
+
+                auto* cLyrics = clipEl->createNewChildElement("Lyrics");
+                for (const auto& l : clip.lyrics)
+                {
+                    auto* el = cLyrics->createNewChildElement("Line");
+                    el->setAttribute("text", l.text);
+                    el->setAttribute("startBar", l.startBar);
+                    el->setAttribute("endBar", l.endBar);
+                    el->setAttribute("section", l.sectionIndex);
+                    if (l.isBreak)
+                        el->setAttribute("isBreak", true);
+                }
+            }
+        }
+
         return root;
     }
 
@@ -246,6 +367,9 @@ public:
         std::lock_guard<std::mutex> lock(mutex);
 
         defaultBarsPerLine = root->getDoubleAttribute("defaultBarsPerLine", 2.0);
+        liveSourceMode = root->getStringAttribute("liveSource") == "editor"
+                             ? LiveSourceMode::FromEditor
+                             : LiveSourceMode::LiveInput;
 
         chords.clear();
         if (auto* chordsXml = root->getChildByName("Chords"))
@@ -288,6 +412,62 @@ public:
                 lyrics.push_back(l);
             }
         }
+
+        clips.clear();
+        if (auto* clipsXml = root->getChildByName("Clips"))
+        {
+            for (auto* clipEl : clipsXml->getChildIterator())
+            {
+                SongClip clip;
+                clip.absoluteStartBar = clipEl->getDoubleAttribute("absoluteStart", 1.0);
+                clip.absoluteEndBar = clipEl->getDoubleAttribute("absoluteEnd", 1.0);
+                clip.defaultBarsPerLine = clipEl->getDoubleAttribute("defaultBarsPerLine", 2.0);
+                clip.bpm = clipEl->getDoubleAttribute("bpm", 120.0);
+                clip.timeSigNum = clipEl->getIntAttribute("timeSigNum", 4);
+                clip.timeSigDen = clipEl->getIntAttribute("timeSigDen", 4);
+
+                if (auto* cChords = clipEl->getChildByName("Chords"))
+                {
+                    for (auto* el : cChords->getChildIterator())
+                    {
+                        Chord c;
+                        c.name = el->getStringAttribute("name");
+                        c.barPosition = el->getDoubleAttribute("bar");
+                        c.source = el->getStringAttribute("source") == "manual" ? Chord::Manual : Chord::Midi;
+                        clip.chords.push_back(c);
+                    }
+                }
+
+                if (auto* cSections = clipEl->getChildByName("Sections"))
+                {
+                    for (auto* el : cSections->getChildIterator())
+                    {
+                        Section s;
+                        s.name = el->getStringAttribute("name");
+                        s.startBar = el->getIntAttribute("startBar", 1);
+                        s.endBar = el->getIntAttribute("endBar", 1);
+                        s.colour = juce::Colour::fromString(el->getStringAttribute("colour", "ff00bcd4"));
+                        clip.sections.push_back(s);
+                    }
+                }
+
+                if (auto* cLyrics = clipEl->getChildByName("Lyrics"))
+                {
+                    for (auto* el : cLyrics->getChildIterator())
+                    {
+                        LyricLine l;
+                        l.text = el->getStringAttribute("text");
+                        l.startBar = el->getDoubleAttribute("startBar", 1.0);
+                        l.endBar = el->getDoubleAttribute("endBar", 2.0);
+                        l.sectionIndex = el->getIntAttribute("section", -1);
+                        l.isBreak = el->getBoolAttribute("isBreak", false);
+                        clip.lyrics.push_back(l);
+                    }
+                }
+
+                clips.push_back(clip);
+            }
+        }
     }
 
 private:
@@ -296,4 +476,6 @@ private:
     std::vector<Section> sections;
     std::vector<LyricLine> lyrics;
     double defaultBarsPerLine = 2.0;
+    LiveSourceMode liveSourceMode = LiveSourceMode::LiveInput;
+    std::vector<SongClip> clips;
 };
