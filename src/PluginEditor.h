@@ -86,6 +86,9 @@ private:
     // Multi-clip tracking (for "From Editor" mode)
     int lastActiveClipIndex = -1;
 
+    // SysEx song tracking: absolute bar where the current SysEx song starts
+    double sysExSongStartBar = 0.0;
+
     // Drag-and-drop state
     bool isDragOver = false;
 

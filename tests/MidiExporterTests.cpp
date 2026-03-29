@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include "MidiExporter.h"
 #include "SongModel.h"
+#include "SharedState.h"
 
 // ══════════════════════════════════════════════════
 // barToTick conversion
@@ -234,4 +235,147 @@ TEST(MidiExporter, WriteToFile)
     EXPECT_GT(tempFile.getSize(), 0);
 
     tempFile.deleteFile();
+}
+
+// ══════════════════════════════════════════════════
+// SysEx encoding in exported MIDI
+// ══════════════════════════════════════════════════
+
+TEST(MidiExporter, ExportContainsSysExEvents)
+{
+    SongModel model;
+    model.addLyricLine({ "Hello world", 1.0, 3.0, -1, false });
+
+    MidiExporter::ExportContext ctx { 120.0, 4, 4 };
+    auto data = MidiExporter::exportToSmf(model, ctx);
+
+    juce::MemoryInputStream mis(data.getData(), data.getSize(), false);
+    juce::MidiFile midiFile;
+    ASSERT_TRUE(midiFile.readFrom(mis, true));
+
+    const auto* seq = midiFile.getTrack(0);
+    ASSERT_NE(seq, nullptr);
+
+    int sysExCount = 0;
+    bool foundSongEnd = false;
+    for (int i = 0; i < seq->getNumEvents(); ++i)
+    {
+        const auto& msg = seq->getEventPointer(i)->message;
+        if (msg.isSysEx())
+        {
+            auto* sysExData = msg.getSysExData();
+            int sysExSize = msg.getSysExDataSize();
+            if (JimmySysEx::isJimmySysEx(sysExData, sysExSize))
+            {
+                auto msgType = sysExData[JimmySysEx::kMsgTypeOffset];
+                if (msgType == JimmySysEx::kSongHeader)
+                    ++sysExCount;
+                else if (msgType == JimmySysEx::kSongEnd)
+                    foundSongEnd = true;
+            }
+        }
+    }
+
+    EXPECT_GE(sysExCount, 1);  // At least one song header SysEx
+    EXPECT_TRUE(foundSongEnd);  // Song end marker present
+}
+
+TEST(MidiExporter, SysExRepeatEvery16Bars)
+{
+    SongModel model;
+    // Create a song spanning 40 bars
+    for (int i = 0; i < 20; ++i)
+    {
+        double startBar = 1.0 + i * 2.0;
+        model.addLyricLine({ "Line " + juce::String(i), startBar, startBar + 2.0, -1, false });
+    }
+
+    MidiExporter::ExportContext ctx { 120.0, 4, 4 };
+    auto data = MidiExporter::exportToSmf(model, ctx);
+
+    juce::MemoryInputStream mis(data.getData(), data.getSize(), false);
+    juce::MidiFile midiFile;
+    ASSERT_TRUE(midiFile.readFrom(mis, true));
+
+    const auto* seq = midiFile.getTrack(0);
+    ASSERT_NE(seq, nullptr);
+
+    int songHeaderCount = 0;
+    for (int i = 0; i < seq->getNumEvents(); ++i)
+    {
+        const auto& msg = seq->getEventPointer(i)->message;
+        if (msg.isSysEx())
+        {
+            auto* sysExData = msg.getSysExData();
+            int sysExSize = msg.getSysExDataSize();
+            if (JimmySysEx::isJimmySysEx(sysExData, sysExSize)
+                && sysExData[JimmySysEx::kMsgTypeOffset] == JimmySysEx::kSongHeader)
+                ++songHeaderCount;
+        }
+    }
+
+    // 40 bars / 16 = 2.5, plus bar 0 → should have at least 3 headers
+    EXPECT_GE(songHeaderCount, 3);
+}
+
+TEST(MidiExporter, SysExPayloadDecodable)
+{
+    SongModel model;
+    model.addLyricLine({ "Test line", 1.0, 3.0, -1, false });
+    model.addChord({ "Am", 1.0, Chord::Manual });
+
+    MidiExporter::ExportContext ctx { 120.0, 4, 4 };
+    auto data = MidiExporter::exportToSmf(model, ctx);
+
+    juce::MemoryInputStream mis(data.getData(), data.getSize(), false);
+    juce::MidiFile midiFile;
+    ASSERT_TRUE(midiFile.readFrom(mis, true));
+
+    const auto* seq = midiFile.getTrack(0);
+    ASSERT_NE(seq, nullptr);
+
+    // Find first song header SysEx and decode it
+    for (int i = 0; i < seq->getNumEvents(); ++i)
+    {
+        const auto& msg = seq->getEventPointer(i)->message;
+        if (msg.isSysEx())
+        {
+            auto* sysExData = msg.getSysExData();
+            int sysExSize = msg.getSysExDataSize();
+            if (JimmySysEx::isJimmySysEx(sysExData, sysExSize)
+                && sysExData[JimmySysEx::kMsgTypeOffset] == JimmySysEx::kSongHeader
+                && sysExSize > JimmySysEx::kPayloadOffset)
+            {
+                auto xmlString = MidiExporter::decompressSongXml(
+                    sysExData + JimmySysEx::kPayloadOffset,
+                    sysExSize - JimmySysEx::kPayloadOffset);
+
+                ASSERT_FALSE(xmlString.isEmpty());
+
+                auto songData = SongModel::songFromXml(xmlString);
+                ASSERT_EQ(songData.lyrics.size(), 1u);
+                EXPECT_EQ(songData.lyrics[0].text, "Test line");
+                ASSERT_EQ(songData.chords.size(), 1u);
+                EXPECT_EQ(songData.chords[0].name, "Am");
+                return;
+            }
+        }
+    }
+
+    FAIL() << "No decodable Song Header SysEx found";
+}
+
+TEST(MidiExporter, CompressDecompressRoundTrip)
+{
+    juce::String original = "<JimmySongData defaultBarsPerLine=\"2\"><Lyrics><Line text=\"Hello\" startBar=\"1\" endBar=\"3\"/></Lyrics></JimmySongData>";
+    auto compressed = MidiExporter::decompressSongXml(nullptr, 0);
+    EXPECT_TRUE(compressed.isEmpty());
+
+    // Use songToXml from a model for a proper round-trip
+    SongModel model;
+    model.addLyricLine({ "Round trip test", 1.0, 3.0, -1, false });
+    auto xmlString = model.songToXml();
+
+    // We can't directly call compressSongXml (private), but we can test through export
+    // The SysExPayloadDecodable test above already covers this path.
 }

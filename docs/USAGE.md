@@ -41,24 +41,32 @@ Jimmy will parse all the MIDI notes, identify the chords, and place them at thei
 
 If the MIDI file was exported from Jimmy (contains the `JIMMY:v1` marker), **all song data** is restored — lyrics, sections, chords, timing, and per-line overrides. This is the recommended way to transfer songs between Cubase projects.
 
-1. Export from Jimmy using the **"Drag to track ↗"** zone (see below)
-2. Drag the exported MIDI part or file back onto Jimmy's window
+1. Export from Jimmy using the **"Drag to Jimmy track ↗"** zone (see below)
+2. Drag the exported MIDI part or file back onto Jimmy's plugin window
 3. Jimmy detects the marker and imports the full song state
 
 If you already have clips loaded, the new data is added as a **new clip** after the last one.
 
+**Note:** For the primary workflow (syncing Jimmy with your DAW timeline), drag the exported file to Jimmy's **instrument track** instead. See section 2d.
+
 ### 2d. Exporting to MIDI
 
-When lyrics are loaded in Edit Mode, a **"Drag to track ↗"** zone appears at the bottom of the editor. This lets you export all Jimmy data as a standard MIDI file:
+When lyrics are loaded in Edit Mode, a **"Drag to Jimmy track ↗"** zone appears at the bottom of the editor. This lets you export all Jimmy data as a MIDI file that syncs with your DAW:
 
-1. Click and drag the export zone onto your Cubase MIDI or Instrument track
+1. Click and drag the export zone onto your **Jimmy instrument track** in Cubase
 2. Cubase creates a MIDI clip containing your lyrics, chords, sections, and timing
-3. The clip is self-contained — it works in any project when dropped back onto Jimmy
+3. The clip is self-contained — moving it in the arrangement keeps everything in sync
+4. When Cubase plays the clip, Jimmy automatically displays the correct song data
 
 The exported file uses:
-- **Lyric Meta Events** (RP-017) for lyrics text
-- **Text Meta Events** for chords (`CHORD:Am`), sections (`SECTION:Verse`), and metadata
+- **SysEx messages** containing the full song data (gzip-compressed XML) — this is what the DAW sends to Jimmy during playback, keeping lyrics and chords synced to the timeline
+- **Lyric Meta Events** (RP-017) for lyrics text (backward compatibility)
+- **Text Meta Events** for chords, sections, and metadata (backward compatibility)
 - **Tempo and time signature** matching your current project settings
+
+Song data SysEx is repeated every 16 bars in the MIDI file, so if you start playback mid-song, Jimmy will pick up the song data within ~16 bars.
+
+**Tip:** You can also drop the exported MIDI file directly onto Jimmy's plugin window to re-import the full song (useful for copying between projects).
 
 ### 2e. Live Source Toggle
 
@@ -71,18 +79,22 @@ Use **FROM EDITOR** mode when you've imported or entered all your chord and lyri
 
 ### 2f. Multi-Song Setlist
 
-You can set up a full live show with multiple songs on a single Cubase track:
+You can set up a full live show with multiple songs on a single Jimmy instrument track:
 
-1. Enter lyrics and chords for Song 1 → export using "Drag to track"
+1. Enter lyrics and chords for Song 1 → export using "Drag to Jimmy track"
 2. Clear the editor, enter Song 2 → export to the same track, placed after Song 1
 3. Repeat for all songs in your setlist
 
-Each exported MIDI clip is **self-contained** with its own lyrics, chords, sections, and timing. In **FROM EDITOR** mode, Jimmy automatically:
+Each exported MIDI clip is **self-contained** with its own lyrics, chords, sections, and timing. Jimmy automatically:
 
-- Detects which clip is currently playing based on the transport position
-- Displays the correct song data with bar positions relative to each clip
+- Detects which song is currently playing when Cubase sends the clip's SysEx data
+- Displays the correct lyrics and chords with bar positions relative to each song
+- Transitions seamlessly between songs — the next song loads instantly when its clip begins
 - Shows a blank display during gaps between clips
-- Transitions cleanly between songs with no manual intervention
+
+**Moving clips** in the Cubase arrangement automatically moves the songs in Jimmy — no need to re-export or re-import.
+
+**Starting mid-song:** If you start playback in the middle of a song clip, Jimmy will pick up the song data within ~16 bars (song data is repeated at regular intervals in the MIDI clip).
 
 ### 2g. Chord display in Live Mode
 

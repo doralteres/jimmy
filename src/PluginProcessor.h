@@ -41,15 +41,23 @@ public:
     // Song data model — accessed from UI thread (with internal mutex)
     SongModel songModel;
 
-    // Current detected chord name (atomic for lock-free read from UI)
-    std::atomic<int> currentChordHash { 0 };
-    juce::String currentDetectedChord;
-
     // Lock-free FIFO for chord events (audio thread -> UI thread)
     ChordEventFifo chordEventFifo;
 
+    // Lock-free FIFO for SysEx song data (audio thread -> UI thread)
+    SongDataFifo songDataFifo;
+
+    // True when a SysEx-encoded song is active (suppresses live chord detection)
+    std::atomic<bool> sysExSongActive { false };
+
 private:
+    void handleJimmySysEx(const juce::MidiMessage& msg);
+
     juce::String lastDetectedChord;
+
+    // SysEx deduplication: avoid reloading same song on repeated SysEx
+    uint32_t lastPushedSongHash = 0;
+    double   lastPushedStartBar = -1.0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(JimmyProcessor)
 };

@@ -67,15 +67,25 @@ void JimmyProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBu
         }
     }
 
-    // Process MIDI messages (only in Live Input mode)
+    // Process MIDI messages — always scan for SysEx, notes only in Live Input mode
     bool notesChanged = false;
     constexpr int kLiveInputMode = static_cast<int>(LiveSourceMode::LiveInput);
     int liveMode = transportState.liveSourceMode.load(std::memory_order_relaxed);
-    if (liveMode == kLiveInputMode)
-    {
+
     for (const auto metadata : midiMessages)
     {
         const auto msg = metadata.getMessage();
+
+        // SysEx: always process regardless of live mode
+        if (msg.isSysEx())
+        {
+            handleJimmySysEx(msg);
+            continue;
+        }
+
+        // Note/CC messages: only in Live Input mode
+        if (liveMode != kLiveInputMode)
+            continue;
 
         if (msg.isNoteOn())
         {
@@ -94,16 +104,14 @@ void JimmyProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBu
         }
         else if (msg.isProgramChange())
         {
-            // Program changes can be used for section markers
-            // Store the program number for the UI to pick up
             transportState.lastProgramChange.store(msg.getProgramChangeNumber(), std::memory_order_relaxed);
             transportState.programChangeFlag.store(true, std::memory_order_relaxed);
         }
     }
-    } // end LiveInput mode
 
-    // Detect chord from held MIDI notes (only in Live Input mode)
-    if (notesChanged && liveMode == kLiveInputMode)
+    // Detect chord from held MIDI notes (only in Live Input mode, not when SysEx song is active)
+    if (notesChanged && liveMode == kLiveInputMode
+        && !sysExSongActive.load(std::memory_order_relaxed))
     {
         auto heldNotes = midiNoteState.getHeldNotes();
         if (!heldNotes.empty())
@@ -112,18 +120,74 @@ void JimmyProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBu
             if (result.name.isNotEmpty() && result.name != lastDetectedChord)
             {
                 lastDetectedChord = result.name;
-                currentDetectedChord = result.name;
-                currentChordHash.fetch_add(1, std::memory_order_relaxed);
 
                 // Push chord event to lock-free FIFO (drained by UI thread)
                 double barPos = static_cast<double>(transportState.barCount.load(std::memory_order_relaxed)) + 1.0;
                 chordEventFifo.push(barPos, result.name);
             }
         }
+        else
+        {
+            // All notes released — reset so the same chord can be re-detected
+            lastDetectedChord = "";
+        }
     }
 }
 
 bool JimmyProcessor::hasEditor() const { return true; }
+
+// ── SysEx handling (called from processBlock, audio thread) ──
+
+void JimmyProcessor::handleJimmySysEx(const juce::MidiMessage& msg)
+{
+    auto* data = msg.getSysExData();
+    int   size = msg.getSysExDataSize();
+
+    if (!JimmySysEx::isJimmySysEx(data, size))
+        return;
+
+    auto msgType = data[JimmySysEx::kMsgTypeOffset];
+
+    if (msgType == JimmySysEx::kSongEnd)
+    {
+        sysExSongActive.store(false, std::memory_order_relaxed);
+        lastPushedSongHash = 0;
+        lastPushedStartBar = -1.0;
+        songDataFifo.push(nullptr, 0, 0.0, true);
+        return;
+    }
+
+    if (msgType == JimmySysEx::kSongHeader && size > JimmySysEx::kPayloadOffset)
+    {
+        int relBar = JimmySysEx::decodeRelBar(data[JimmySysEx::kRelBarHiOffset],
+                                              data[JimmySysEx::kRelBarLoOffset]);
+        double currentBar = static_cast<double>(transportState.barCount.load(std::memory_order_relaxed)) + 1.0;
+        double absoluteStartBar = currentBar - static_cast<double>(relBar);
+
+        // Deduplicate: skip if same payload hash at the same start bar
+        const auto* payload = data + JimmySysEx::kPayloadOffset;
+        int payloadSize = size - JimmySysEx::kPayloadOffset;
+
+        // Simple hash: FNV-1a over the first 64 bytes of payload (enough for dedup)
+        uint32_t hash = 2166136261u;
+        int hashLen = std::min(payloadSize, 64);
+        for (int i = 0; i < hashLen; ++i)
+        {
+            hash ^= payload[i];
+            hash *= 16777619u;
+        }
+
+        if (hash == lastPushedSongHash && std::abs(absoluteStartBar - lastPushedStartBar) < 0.5)
+            return; // same song, same position — skip
+
+        lastPushedSongHash = hash;
+        lastPushedStartBar = absoluteStartBar;
+        sysExSongActive.store(true, std::memory_order_relaxed);
+
+        // Store absoluteStartBar in the FIFO so the UI can compute relative position
+        songDataFifo.push(payload, payloadSize, absoluteStartBar, false);
+    }
+}
 
 juce::AudioProcessorEditor* JimmyProcessor::createEditor()
 {

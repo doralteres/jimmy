@@ -3,6 +3,7 @@
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_core/juce_core.h>
 #include "SongModel.h"
+#include "SharedState.h"
 
 // Encodes the full SongModel state into a Standard MIDI File (Type 0, 480 PPQ).
 // Uses RP-017 Lyric Meta Events for lyrics and prefixed Text Meta Events for
@@ -11,6 +12,7 @@ class MidiExporter
 {
 public:
     static constexpr int kPPQ = 480;
+    static constexpr int kSysExRepeatBars = 16; // repeat song SysEx every N bars
 
     struct ExportContext
     {
@@ -100,6 +102,36 @@ public:
         seq.sort();
         seq.updateMatchedPairs();
 
+        // ── SysEx: encode full song data for DAW-track playback ──
+        // Pipeline: songToXml() → gzip → base64 → SysEx with Jimmy header
+        auto compressedPayload = compressSongXml(model.songToXml());
+        if (compressedPayload.getSize() > 0)
+        {
+            // Compute the last bar in the song for repeat placement
+            double lastBar = 1.0;
+            for (const auto& l : lyrics)
+                lastBar = std::max(lastBar, l.endBar);
+            for (const auto& c : chords)
+                lastBar = std::max(lastBar, c.barPosition + 1.0);
+            for (const auto& s : sections)
+                lastBar = std::max(lastBar, static_cast<double>(s.endBar));
+
+            // Place song header SysEx at tick 0, then every kSysExRepeatBars
+            for (int bar = 0; bar <= static_cast<int>(lastBar); bar += kSysExRepeatBars)
+            {
+                double tick = barToTick(static_cast<double>(bar) + 1.0, ctx.timeSigNum);
+                auto sysExMsg = buildSongHeaderSysEx(compressedPayload, bar);
+                seq.addEvent(sysExMsg, tick);
+            }
+
+            // Song end marker at the last bar
+            double endTick = barToTick(lastBar + 1.0, ctx.timeSigNum);
+            auto endMsg = buildSongEndSysEx();
+            seq.addEvent(endMsg, endTick);
+
+            seq.sort();
+        }
+
         // Build MidiFile
         juce::MidiFile midiFile;
         midiFile.setTicksPerQuarterNote(kPPQ);
@@ -163,6 +195,83 @@ private:
         auto msg = juce::MidiMessage(rawData, (int)sizeof(rawData));
         msg.setTimeStamp(tick);
         seq.addEvent(msg);
+    }
+
+    // ── SysEx helpers ──
+
+    // Compress song XML: gzip → base64 → MemoryBlock
+    static juce::MemoryBlock compressSongXml(const juce::String& xmlString)
+    {
+        // Gzip compress
+        juce::MemoryBlock gzipped;
+        {
+            juce::MemoryOutputStream raw(gzipped, false);
+            juce::GZIPCompressorOutputStream gzip(raw);
+            gzip.write(xmlString.toRawUTF8(), xmlString.getNumBytesAsUTF8());
+            gzip.flush();
+        }
+
+        // Base64 encode (SysEx bytes must be 0x00-0x7F; base64 guarantees that)
+        auto base64 = juce::Base64::toBase64(gzipped.getData(), gzipped.getSize());
+
+        juce::MemoryBlock result;
+        result.append(base64.toRawUTF8(), base64.getNumBytesAsUTF8());
+        return result;
+    }
+
+    // Decompress: base64 → gunzip → XML string (public for testing & UI thread use)
+public:
+    static juce::String decompressSongXml(const juce::uint8* data, int size)
+    {
+        // Base64 decode
+        juce::MemoryOutputStream decoded;
+        if (!juce::Base64::convertFromBase64(decoded, juce::String::fromUTF8(reinterpret_cast<const char*>(data), size)))
+            return {};
+
+        // Gunzip
+        juce::MemoryInputStream compressedStream(decoded.getData(), decoded.getDataSize(), false);
+        juce::GZIPDecompressorInputStream gunzip(compressedStream);
+
+        juce::MemoryOutputStream xmlOut;
+        xmlOut.writeFromInputStream(gunzip, -1);
+        return xmlOut.toString();
+    }
+
+private:
+    // Build a SysEx message for a Song Header
+    static juce::MidiMessage buildSongHeaderSysEx(const juce::MemoryBlock& compressedPayload, int relativeBar)
+    {
+        int encodedBar = JimmySysEx::encodeRelBar(relativeBar);
+        juce::uint8 relBarHi = static_cast<juce::uint8>((encodedBar >> 7) & 0x7F);
+        juce::uint8 relBarLo = static_cast<juce::uint8>(encodedBar & 0x7F);
+
+        // Header: [manufacturer][subId1][subId2][msgType][relBarHi][relBarLo][payload...]
+        juce::MemoryBlock sysExBody;
+        juce::uint8 header[] = {
+            JimmySysEx::kManufacturer,
+            JimmySysEx::kSubId1,
+            JimmySysEx::kSubId2,
+            JimmySysEx::kSongHeader,
+            relBarHi,
+            relBarLo
+        };
+        sysExBody.append(header, sizeof(header));
+        sysExBody.append(compressedPayload.getData(), compressedPayload.getSize());
+
+        return juce::MidiMessage::createSysExMessage(sysExBody.getData(),
+                                                     static_cast<int>(sysExBody.getSize()));
+    }
+
+    // Build a SysEx message for Song End
+    static juce::MidiMessage buildSongEndSysEx()
+    {
+        juce::uint8 body[] = {
+            JimmySysEx::kManufacturer,
+            JimmySysEx::kSubId1,
+            JimmySysEx::kSubId2,
+            JimmySysEx::kSongEnd
+        };
+        return juce::MidiMessage::createSysExMessage(body, sizeof(body));
     }
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MidiExporter)

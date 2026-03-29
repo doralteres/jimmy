@@ -2,6 +2,7 @@
 #include "MidiImporter.h"
 #include "MidiExporter.h"
 #include "SongModel.h"
+#include "SharedState.h"
 
 // Helper: export a SongModel to a temp file and return the File.
 static juce::File exportToTempFile(const SongModel& model, const MidiExporter::ExportContext& ctx)
@@ -290,4 +291,98 @@ TEST(MidiImporter, RoundTripDefaultBarsPerLine)
     EXPECT_NEAR(result.defaultBarsPerLine, 3.5, 0.01);
 
     file.deleteFile();
+}
+
+// ══════════════════════════════════════════════════
+// SysEx-encoded MIDI still detected as JimmyFull
+// ══════════════════════════════════════════════════
+
+TEST(MidiImporter, SysExExportStillDetectsAsJimmyFull)
+{
+    // Export with SysEx-enabled exporter and verify the JIMMY:v1 meta marker is still present
+    SongModel model;
+    model.addLyricLine({ "SysEx test", 1.0, 3.0, -1, false });
+
+    MidiExporter::ExportContext ctx { 120.0, 4, 4 };
+    auto file = exportToTempFile(model, ctx);
+
+    EXPECT_EQ(MidiImporter::detectFormat(file), MidiImporter::ImportFormat::JimmyFull);
+
+    // Full import of meta events should still work (backward compat)
+    auto result = MidiImporter::importFull(file);
+    ASSERT_TRUE(result.success);
+    ASSERT_EQ(result.lyrics.size(), 1u);
+    EXPECT_EQ(result.lyrics[0].text, "SysEx test");
+
+    file.deleteFile();
+}
+
+// ══════════════════════════════════════════════════
+// SysEx payload round-trip through export → decode
+// ══════════════════════════════════════════════════
+
+TEST(MidiImporter, SysExPayloadRoundTrip)
+{
+    SongModel model;
+    model.setDefaultBarsPerLine(2.0);
+    model.addSection({ "Verse", 1, 8, juce::Colour(0xfff5a623) });
+    model.addLyricLine({ "Line one", 1.0, 3.0, 0, false });
+    model.addLyricLine({ "Line two", 3.0, 5.0, 0, false });
+    model.addChord({ "Am", 1.0, Chord::Manual });
+    model.addChord({ "G", 3.0, Chord::Midi });
+
+    MidiExporter::ExportContext ctx { 120.0, 4, 4 };
+    auto data = MidiExporter::exportToSmf(model, ctx);
+
+    // Parse the MIDI file and extract the first SysEx Song Header
+    juce::MemoryInputStream mis(data.getData(), data.getSize(), false);
+    juce::MidiFile midiFile;
+    ASSERT_TRUE(midiFile.readFrom(mis, true));
+
+    const auto* seq = midiFile.getTrack(0);
+    ASSERT_NE(seq, nullptr);
+
+    bool foundAndDecoded = false;
+    for (int i = 0; i < seq->getNumEvents(); ++i)
+    {
+        const auto& msg = seq->getEventPointer(i)->message;
+        if (msg.isSysEx())
+        {
+            auto* sysExData = msg.getSysExData();
+            int sysExSize = msg.getSysExDataSize();
+            if (JimmySysEx::isJimmySysEx(sysExData, sysExSize)
+                && sysExData[JimmySysEx::kMsgTypeOffset] == JimmySysEx::kSongHeader
+                && sysExSize > JimmySysEx::kPayloadOffset)
+            {
+                // Decode the payload
+                auto xmlString = MidiExporter::decompressSongXml(
+                    sysExData + JimmySysEx::kPayloadOffset,
+                    sysExSize - JimmySysEx::kPayloadOffset);
+                ASSERT_FALSE(xmlString.isEmpty());
+
+                auto songData = SongModel::songFromXml(xmlString);
+
+                // Verify lyrics
+                ASSERT_EQ(songData.lyrics.size(), 2u);
+                EXPECT_EQ(songData.lyrics[0].text, "Line one");
+                EXPECT_EQ(songData.lyrics[1].text, "Line two");
+
+                // Verify chords
+                ASSERT_EQ(songData.chords.size(), 2u);
+                EXPECT_EQ(songData.chords[0].name, "Am");
+                EXPECT_EQ(songData.chords[0].source, Chord::Manual);
+                EXPECT_EQ(songData.chords[1].name, "G");
+                EXPECT_EQ(songData.chords[1].source, Chord::Midi);
+
+                // Verify sections
+                ASSERT_EQ(songData.sections.size(), 1u);
+                EXPECT_EQ(songData.sections[0].name, "Verse");
+
+                foundAndDecoded = true;
+                break;
+            }
+        }
+    }
+
+    EXPECT_TRUE(foundAndDecoded);
 }

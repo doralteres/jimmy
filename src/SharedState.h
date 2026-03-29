@@ -120,3 +120,100 @@ private:
     std::atomic<int> readPos  { 0 };
     std::atomic<int> writePos { 0 };
 };
+
+// ── Jimmy SysEx protocol ──────────────────────────────────────────
+// Manufacturer ID 0x7D (non-commercial) + sub-ID "JM" (0x4A, 0x4D).
+// Used in exported MIDI files so DAWs forward song data to the plugin.
+namespace JimmySysEx
+{
+    static constexpr juce::uint8 kManufacturer = 0x7D;
+    static constexpr juce::uint8 kSubId1       = 0x4A;  // 'J'
+    static constexpr juce::uint8 kSubId2       = 0x4D;  // 'M'
+    static constexpr int         kHeaderSize   = 3;      // manufacturer + sub-IDs
+
+    // Message types (byte following header)
+    static constexpr juce::uint8 kSongHeader   = 0x01;
+    static constexpr juce::uint8 kSongEnd      = 0x02;
+
+    // Payload layout for kSongHeader:
+    //   [0x7D 0x4A 0x4D] [0x01] [relBar_hi(7)] [relBar_lo(7)] [compressed XML...]
+    //   relBar = 14-bit relative bar offset from the start of the song clip
+    static constexpr int kMsgTypeOffset   = 3;
+    static constexpr int kRelBarHiOffset  = 4;
+    static constexpr int kRelBarLoOffset  = 5;
+    static constexpr int kPayloadOffset   = 6;
+
+    inline bool isJimmySysEx(const juce::uint8* data, int size)
+    {
+        return size > kHeaderSize
+            && data[0] == kManufacturer
+            && data[1] == kSubId1
+            && data[2] == kSubId2;
+    }
+
+    inline int encodeRelBar(int bar)
+    {
+        return (bar > 0x3FFF) ? 0x3FFF : bar;
+    }
+
+    inline int decodeRelBar(juce::uint8 hi, juce::uint8 lo)
+    {
+        return ((hi & 0x7F) << 7) | (lo & 0x7F);
+    }
+}
+
+// Lock-free SPSC FIFO for SysEx song data (audio thread -> UI thread).
+// Audio thread pushes raw SysEx payloads; UI thread decodes XML.
+struct SongDataEvent
+{
+    static constexpr int kMaxPayload = 16384;
+
+    juce::uint8 data[kMaxPayload] {};
+    int    size         = 0;
+    double transportBar = 0.0;   // absolute bar when received
+    bool   isSongEnd    = false; // true = clear active song
+};
+
+struct SongDataFifo
+{
+    static constexpr int kCapacity = 4;
+
+    bool push(const juce::uint8* payload, int payloadSize, double bar, bool songEnd = false)
+    {
+        if (payloadSize > SongDataEvent::kMaxPayload)
+            return false;
+
+        auto w = writePos.load(std::memory_order_relaxed);
+        auto r = readPos.load(std::memory_order_acquire);
+
+        if (((w + 1) % kCapacity) == r)
+            return false;  // full
+
+        auto& slot = buffer[static_cast<size_t>(w)];
+        if (payloadSize > 0)
+            std::memcpy(slot.data, payload, static_cast<size_t>(payloadSize));
+        slot.size = payloadSize;
+        slot.transportBar = bar;
+        slot.isSongEnd = songEnd;
+        writePos.store((w + 1) % kCapacity, std::memory_order_release);
+        return true;
+    }
+
+    bool pop(SongDataEvent& out)
+    {
+        auto r = readPos.load(std::memory_order_relaxed);
+        auto w = writePos.load(std::memory_order_acquire);
+
+        if (r == w)
+            return false;  // empty
+
+        out = buffer[static_cast<size_t>(r)];
+        readPos.store((r + 1) % kCapacity, std::memory_order_release);
+        return true;
+    }
+
+private:
+    std::array<SongDataEvent, kCapacity> buffer {};
+    std::atomic<int> readPos  { 0 };
+    std::atomic<int> writePos { 0 };
+};

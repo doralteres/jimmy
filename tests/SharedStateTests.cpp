@@ -204,3 +204,96 @@ TEST(TransportState, WriteReadAtomic)
     EXPECT_EQ(ts.timeSigDen.load(), 8);
     EXPECT_TRUE(ts.isPlaying.load());
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// JimmySysEx protocol helpers
+// ═══════════════════════════════════════════════════════════════════
+
+TEST(JimmySysEx, IsJimmySysEx)
+{
+    juce::uint8 valid[] = { 0x7D, 0x4A, 0x4D, 0x01 };
+    EXPECT_TRUE(JimmySysEx::isJimmySysEx(valid, 4));
+
+    juce::uint8 tooShort[] = { 0x7D, 0x4A };
+    EXPECT_FALSE(JimmySysEx::isJimmySysEx(tooShort, 2));
+
+    juce::uint8 wrongMfr[] = { 0x7E, 0x4A, 0x4D, 0x01 };
+    EXPECT_FALSE(JimmySysEx::isJimmySysEx(wrongMfr, 4));
+
+    juce::uint8 wrongSub[] = { 0x7D, 0x4B, 0x4D, 0x01 };
+    EXPECT_FALSE(JimmySysEx::isJimmySysEx(wrongSub, 4));
+}
+
+TEST(JimmySysEx, RelBarEncoding)
+{
+    EXPECT_EQ(JimmySysEx::decodeRelBar(0, 0), 0);
+    EXPECT_EQ(JimmySysEx::decodeRelBar(0, 16), 16);
+
+    // Encode then decode round-trip
+    int original = 1234;
+    int encoded = JimmySysEx::encodeRelBar(original);
+    juce::uint8 hi = static_cast<juce::uint8>((encoded >> 7) & 0x7F);
+    juce::uint8 lo = static_cast<juce::uint8>(encoded & 0x7F);
+    EXPECT_EQ(JimmySysEx::decodeRelBar(hi, lo), original);
+
+    // Max value clamp
+    EXPECT_EQ(JimmySysEx::encodeRelBar(0x7FFF), 0x3FFF);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// SongDataFifo
+// ═══════════════════════════════════════════════════════════════════
+
+TEST(SongDataFifo, PushPopRoundTrip)
+{
+    SongDataFifo fifo;
+    juce::uint8 data[] = { 0x01, 0x02, 0x03, 0x04 };
+    EXPECT_TRUE(fifo.push(data, 4, 5.0, false));
+
+    SongDataEvent out;
+    EXPECT_TRUE(fifo.pop(out));
+    EXPECT_EQ(out.size, 4);
+    EXPECT_NEAR(out.transportBar, 5.0, 0.001);
+    EXPECT_FALSE(out.isSongEnd);
+    EXPECT_EQ(out.data[0], 0x01);
+    EXPECT_EQ(out.data[3], 0x04);
+}
+
+TEST(SongDataFifo, PopFromEmptyReturnsFalse)
+{
+    SongDataFifo fifo;
+    SongDataEvent out;
+    EXPECT_FALSE(fifo.pop(out));
+}
+
+TEST(SongDataFifo, SongEndEvent)
+{
+    SongDataFifo fifo;
+    EXPECT_TRUE(fifo.push(nullptr, 0, 0.0, true));
+
+    SongDataEvent out;
+    EXPECT_TRUE(fifo.pop(out));
+    EXPECT_TRUE(out.isSongEnd);
+    EXPECT_EQ(out.size, 0);
+}
+
+TEST(SongDataFifo, RejectOversizedPayload)
+{
+    SongDataFifo fifo;
+    // Payload larger than kMaxPayload should be rejected
+    EXPECT_FALSE(fifo.push(nullptr, SongDataEvent::kMaxPayload + 1, 1.0, false));
+}
+
+TEST(SongDataFifo, FullBufferReturnsFalse)
+{
+    SongDataFifo fifo;
+    juce::uint8 data[] = { 0xFF };
+    // Capacity is 4, usable is 3 (SPSC ring buffer)
+    int pushed = 0;
+    for (int i = 0; i < 10; ++i)
+    {
+        if (fifo.push(data, 1, static_cast<double>(i), false))
+            ++pushed;
+    }
+    EXPECT_EQ(pushed, SongDataFifo::kCapacity - 1);
+}

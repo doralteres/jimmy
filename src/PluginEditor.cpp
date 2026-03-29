@@ -112,12 +112,45 @@ void JimmyEditor::timerCallback()
     displayIsPlaying   = processorRef.transportState.isPlaying.load(std::memory_order_relaxed);
     displayIsRecording = processorRef.transportState.isRecording.load(std::memory_order_relaxed);
     displayHeldNotes   = processorRef.midiNoteState.getHeldNotes();
-    displayCurrentChord = processorRef.currentDetectedChord;
 
     // Drain chord events from the lock-free FIFO into SongModel (UI thread safe)
     ChordEvent chordEvt;
     while (processorRef.chordEventFifo.pop(chordEvt))
+    {
         processorRef.songModel.setMidiChordAt(chordEvt.barPosition, chordEvt.getName());
+        displayCurrentChord = chordEvt.getName();
+    }
+
+    // Clear chord display when no notes are held
+    if (displayHeldNotes.empty() && processorRef.songModel.getLiveSourceMode() == LiveSourceMode::LiveInput)
+        displayCurrentChord = {};
+
+    // Drain SysEx song data from the lock-free FIFO (audio thread → UI thread)
+    SongDataEvent songEvt;
+    while (processorRef.songDataFifo.pop(songEvt))
+    {
+        if (songEvt.isSongEnd)
+        {
+            processorRef.songModel.loadSongData({});
+            lyricsEditor.refreshFromModel();
+            sysExSongStartBar = 0.0;
+            continue;
+        }
+
+        auto xmlString = MidiExporter::decompressSongXml(songEvt.data, songEvt.size);
+        if (xmlString.isEmpty())
+            continue;
+
+        auto songData = SongModel::songFromXml(xmlString);
+        if (songData.lyrics.empty() && songData.chords.empty())
+            continue;
+
+        // transportBar from FIFO = absoluteStartBar of this song
+        sysExSongStartBar = songEvt.transportBar;
+
+        processorRef.songModel.loadSongData(songData);
+        lyricsEditor.refreshFromModel();
+    }
 
     // Import toast countdown
     if (importToastCountdown > 0)
@@ -167,12 +200,24 @@ void JimmyEditor::timerCallback()
         }
         else
         {
-            // Live Input mode — existing behavior
+            // Live Input mode (or SysEx-loaded song)
             teleprompterView.setSongData(
                 processorRef.songModel.getLyrics(),
                 processorRef.songModel.getChords(),
                 processorRef.songModel.getSections());
-            teleprompterView.setPosition(currentBar);
+
+            // If a SysEx song is loaded, compute relative bar position
+            if (processorRef.sysExSongActive.load(std::memory_order_relaxed) && sysExSongStartBar > 0.0)
+            {
+                double relativeBar = currentBar - sysExSongStartBar + 1.0;
+                teleprompterView.setPosition(relativeBar);
+                displayCurrentSection = processorRef.songModel.getSectionAt(relativeBar);
+                displayCurrentChord = processorRef.songModel.getChordAt(relativeBar);
+            }
+            else
+            {
+                teleprompterView.setPosition(currentBar);
+            }
         }
     }
 
@@ -506,6 +551,8 @@ void JimmyEditor::importMidiFile(const juce::File& file)
 
             processorRef.songModel.addClip(clip);
 
+            lyricsEditor.refreshFromModel();
+
             importToastMessage = "Added clip at bar " + juce::String((int)clip.absoluteStartBar)
                                  + " (" + juce::String((int)result.lyrics.size()) + " lines, "
                                  + juce::String((int)result.chords.size()) + " chords)";
@@ -516,8 +563,8 @@ void JimmyEditor::importMidiFile(const juce::File& file)
             processorRef.songModel.setLyrics(result.lyrics);
             processorRef.songModel.setSections(result.sections);
 
-            // Replace all chords (clear existing, add imported)
-            processorRef.songModel.clearMidiChords();
+            // Replace all chords (clear all sources, add imported)
+            processorRef.songModel.clearAllChords();
             for (const auto& chord : result.chords)
                 processorRef.songModel.addChord(chord);
 
@@ -640,7 +687,7 @@ void JimmyEditor::ExportDragZone::paint(juce::Graphics& g)
 
     g.setColour(juce::Colour(Theme::kAccent));
     g.setFont(juce::Font(juce::FontOptions(13.0f)));
-    g.drawText(juce::CharPointer_UTF8("Drag to track \xe2\x86\x97"),
+    g.drawText(juce::CharPointer_UTF8("Drag to Jimmy track \xe2\x86\x97"),
                getLocalBounds(), juce::Justification::centred);
 }
 
@@ -711,10 +758,12 @@ void JimmyEditor::showHelpPopup()
         "Use 'Clear MIDI Chords' in Edit mode to remove them.\n\n"
 
         "EXPORTING TO MIDI\n"
-        "When lyrics are loaded, a 'Drag to track' zone appears at\n"
-        "the bottom of Edit Mode. Drag it onto your Cubase MIDI or\n"
-        "Instrument track to create a Jimmy-encoded MIDI clip.\n"
-        "This clip contains all lyrics, chords, sections and timing.\n\n"
+        "When lyrics are loaded, a 'Drag to Jimmy track' zone appears at\n"
+        "the bottom of Edit Mode. Drag it onto your Jimmy instrument\n"
+        "track in Cubase to create a synced MIDI clip.\n"
+        "The clip contains all lyrics, chords, sections and timing\n"
+        "encoded as SysEx — it syncs with the DAW timeline.\n"
+        "Moving the clip in Cubase automatically moves the song.\n\n"
 
         "LIVE SOURCE TOGGLE\n"
         "The toolbar has a 'LIVE INPUT' / 'FROM EDITOR' toggle:\n"
@@ -726,10 +775,11 @@ void JimmyEditor::showHelpPopup()
 
         "MULTI-SONG SETLIST\n"
         "Export multiple songs as MIDI clips and place them\n"
-        "sequentially on the same Cubase track. In 'FROM EDITOR'\n"
-        "mode, Jimmy automatically detects which clip is playing\n"
-        "and displays the correct song data. Gaps between clips\n"
-        "show a blank display.\n\n"
+        "sequentially on the same Jimmy instrument track.\n"
+        "Jimmy automatically detects which song is playing\n"
+        "based on the transport position and displays the\n"
+        "correct lyrics and chords. Moving clips in your\n"
+        "arrangement keeps everything in sync.\n\n"
 
         "LIVE MODE\n"
         "Click 'LIVE MODE' to switch to the teleprompter view.\n"

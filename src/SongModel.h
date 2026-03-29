@@ -104,6 +104,12 @@ public:
                      chords.end());
     }
 
+    void clearAllChords()
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        chords.clear();
+    }
+
     // Returns the active chord at a given bar position
     juce::String getChordAt(double barPos) const
     {
@@ -478,4 +484,119 @@ private:
     double defaultBarsPerLine = 2.0;
     LiveSourceMode liveSourceMode = LiveSourceMode::LiveInput;
     std::vector<SongClip> clips;
+
+    // ── Static helpers for standalone song XML (no clips/liveSource) ──
+public:
+    struct SongData
+    {
+        std::vector<LyricLine> lyrics;
+        std::vector<Section>   sections;
+        std::vector<Chord>     chords;
+        double defaultBarsPerLine = 2.0;
+    };
+
+    // Serialize the flat model data (lyrics/chords/sections) to a standalone XML string.
+    // Thread-safe (acquires mutex).
+    juce::String songToXml() const
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+
+        juce::XmlElement root("JimmySongData");
+        root.setAttribute("defaultBarsPerLine", defaultBarsPerLine);
+
+        auto* chordsXml = root.createNewChildElement("Chords");
+        for (const auto& c : chords)
+        {
+            auto* el = chordsXml->createNewChildElement("Chord");
+            el->setAttribute("name", c.name);
+            el->setAttribute("bar", c.barPosition);
+            el->setAttribute("source", c.source == Chord::Manual ? "manual" : "midi");
+        }
+
+        auto* sectionsXml = root.createNewChildElement("Sections");
+        for (const auto& s : sections)
+        {
+            auto* el = sectionsXml->createNewChildElement("Section");
+            el->setAttribute("name", s.name);
+            el->setAttribute("startBar", s.startBar);
+            el->setAttribute("endBar", s.endBar);
+            el->setAttribute("colour", s.colour.toString());
+        }
+
+        auto* lyricsXml = root.createNewChildElement("Lyrics");
+        for (const auto& l : lyrics)
+        {
+            auto* el = lyricsXml->createNewChildElement("Line");
+            el->setAttribute("text", l.text);
+            el->setAttribute("startBar", l.startBar);
+            el->setAttribute("endBar", l.endBar);
+            el->setAttribute("section", l.sectionIndex);
+            if (l.isBreak)
+                el->setAttribute("isBreak", true);
+        }
+
+        return root.toString();
+    }
+
+    // Parse standalone song XML (as produced by songToXml) into a SongData struct.
+    static SongData songFromXml(const juce::String& xmlString)
+    {
+        SongData result;
+        auto xml = juce::parseXML(xmlString);
+        if (xml == nullptr || !xml->hasTagName("JimmySongData"))
+            return result;
+
+        result.defaultBarsPerLine = xml->getDoubleAttribute("defaultBarsPerLine", 2.0);
+
+        if (auto* chordsXml = xml->getChildByName("Chords"))
+        {
+            for (auto* el : chordsXml->getChildIterator())
+            {
+                Chord c;
+                c.name = el->getStringAttribute("name");
+                c.barPosition = el->getDoubleAttribute("bar");
+                c.source = el->getStringAttribute("source") == "manual" ? Chord::Manual : Chord::Midi;
+                result.chords.push_back(c);
+            }
+        }
+
+        if (auto* sectionsXml = xml->getChildByName("Sections"))
+        {
+            for (auto* el : sectionsXml->getChildIterator())
+            {
+                Section s;
+                s.name = el->getStringAttribute("name");
+                s.startBar = el->getIntAttribute("startBar", 1);
+                s.endBar = el->getIntAttribute("endBar", 1);
+                s.colour = juce::Colour::fromString(el->getStringAttribute("colour", "ff00bcd4"));
+                result.sections.push_back(s);
+            }
+        }
+
+        if (auto* lyricsXml = xml->getChildByName("Lyrics"))
+        {
+            for (auto* el : lyricsXml->getChildIterator())
+            {
+                LyricLine l;
+                l.text = el->getStringAttribute("text");
+                l.startBar = el->getDoubleAttribute("startBar", 1.0);
+                l.endBar = el->getDoubleAttribute("endBar", 2.0);
+                l.sectionIndex = el->getIntAttribute("section", -1);
+                l.isBreak = el->getBoolAttribute("isBreak", false);
+                result.lyrics.push_back(l);
+            }
+        }
+
+        return result;
+    }
+
+    // Load a SongData struct into the flat model, replacing existing data.
+    void loadSongData(const SongData& data)
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        lyrics = data.lyrics;
+        sections = data.sections;
+        chords = data.chords;
+        defaultBarsPerLine = data.defaultBarsPerLine;
+    }
 };

@@ -480,3 +480,112 @@ TEST(SongModel, ClipXmlRoundTrip)
     ASSERT_EQ(clips[0].chords.size(), 1u);
     EXPECT_EQ(clips[0].chords[0].name, juce::String("Dm"));
 }
+
+// ── clearAllChords ──────────────────────────────────────────────────
+
+TEST(SongModel, ClearAllChordsRemovesBothSources)
+{
+    SongModel m;
+    m.addChord({ "Am", 1.0, Chord::Manual });
+    m.addChord({ "G", 3.0, Chord::Midi });
+    m.addChord({ "Dm", 5.0, Chord::Manual });
+    EXPECT_EQ(m.getChords().size(), 3u);
+
+    m.clearAllChords();
+    EXPECT_TRUE(m.getChords().empty());
+}
+
+TEST(SongModel, ClearAllChordsOnEmptyModel)
+{
+    SongModel m;
+    m.clearAllChords();  // should not crash
+    EXPECT_TRUE(m.getChords().empty());
+}
+
+// ── songToXml / songFromXml ─────────────────────────────────────────
+
+TEST(SongModel, SongToXmlRoundTrip)
+{
+    SongModel m;
+    m.setDefaultBarsPerLine(3.0);
+    m.addSection({ "Verse", 1, 8, juce::Colour(0xfff5a623) });
+    m.addLyricLine({ "Hello world", 1.0, 4.0, 0, false });
+    m.addLyricLine({ "", 4.0, 6.0, -1, true });  // break
+    m.addLyricLine({ "Second line", 6.0, 9.0, 0, false });
+    m.addChord({ "Am", 1.0, Chord::Manual });
+    m.addChord({ "G", 6.0, Chord::Midi });
+
+    auto xmlString = m.songToXml();
+    EXPECT_FALSE(xmlString.isEmpty());
+
+    auto result = SongModel::songFromXml(xmlString);
+    EXPECT_NEAR(result.defaultBarsPerLine, 3.0, 0.01);
+
+    ASSERT_EQ(result.lyrics.size(), 3u);
+    EXPECT_EQ(result.lyrics[0].text, "Hello world");
+    EXPECT_NEAR(result.lyrics[0].startBar, 1.0, 0.01);
+    EXPECT_TRUE(result.lyrics[1].isBreak);
+    EXPECT_EQ(result.lyrics[2].text, "Second line");
+
+    ASSERT_EQ(result.sections.size(), 1u);
+    EXPECT_EQ(result.sections[0].name, "Verse");
+    EXPECT_EQ(result.sections[0].startBar, 1);
+    EXPECT_EQ(result.sections[0].endBar, 8);
+
+    ASSERT_EQ(result.chords.size(), 2u);
+    EXPECT_EQ(result.chords[0].name, "Am");
+    EXPECT_EQ(result.chords[0].source, Chord::Manual);
+    EXPECT_EQ(result.chords[1].name, "G");
+    EXPECT_EQ(result.chords[1].source, Chord::Midi);
+}
+
+TEST(SongModel, SongFromXmlInvalidReturnsEmpty)
+{
+    auto result = SongModel::songFromXml("not xml at all");
+    EXPECT_TRUE(result.lyrics.empty());
+    EXPECT_TRUE(result.chords.empty());
+    EXPECT_TRUE(result.sections.empty());
+}
+
+TEST(SongModel, SongFromXmlWrongTagReturnsEmpty)
+{
+    auto result = SongModel::songFromXml("<WrongTag/>");
+    EXPECT_TRUE(result.lyrics.empty());
+}
+
+TEST(SongModel, LoadSongDataReplacesExistingData)
+{
+    SongModel m;
+    m.addLyricLine({ "Old line", 1.0, 3.0, -1, false });
+    m.addChord({ "C", 1.0, Chord::Manual });
+
+    SongModel::SongData newData;
+    newData.lyrics.push_back({ "New line", 5.0, 7.0, -1, false });
+    newData.chords.push_back({ "Dm", 5.0, Chord::Midi });
+    newData.defaultBarsPerLine = 4.0;
+
+    m.loadSongData(newData);
+
+    auto lyrics = m.getLyrics();
+    ASSERT_EQ(lyrics.size(), 1u);
+    EXPECT_EQ(lyrics[0].text, "New line");
+
+    auto chords = m.getChords();
+    ASSERT_EQ(chords.size(), 1u);
+    EXPECT_EQ(chords[0].name, "Dm");
+
+    EXPECT_NEAR(m.getDefaultBarsPerLine(), 4.0, 0.01);
+}
+
+TEST(SongModel, SongToXmlHebrewRoundTrip)
+{
+    SongModel m;
+    juce::String hebrew = juce::String::fromUTF8("\xd7\xa9\xd7\x9c\xd7\x95\xd7\x9d");
+    m.addLyricLine({ hebrew, 1.0, 3.0, -1, false });
+
+    auto xmlString = m.songToXml();
+    auto result = SongModel::songFromXml(xmlString);
+
+    ASSERT_EQ(result.lyrics.size(), 1u);
+    EXPECT_EQ(result.lyrics[0].text, hebrew);
+}
