@@ -166,51 +166,108 @@ public:
                 const auto& row = wrappedRows[static_cast<size_t>(r)];
                 float rowTextWidth = juce::jlimit(1.0f, contentWidth, row.textWidth);
 
-                // Draw chords for this row
+                // Draw chords for this row.
+                // Chords are sorted by subFrac and drawn with adaptive font scaling:
+                // if a chord would overlap its neighbour at the default size, the font
+                // is reduced proportionally so every chord stays visible.
                 if (rowY + chordHeight > 0 && rowY < viewHeight)
                 {
-                    float lastChordRight = -1.0f;
-                    g.setFont(chordFont);
-
+                    // Collect chords for this row, sorted by subFrac (ascending).
+                    // For LTR this is left→right; for RTL subFrac=0 is rightmost so
+                    // ascending subFrac is also the natural draw order (right→left).
+                    std::vector<const PlacedChord*> rowChords;
                     for (const auto& pc : placedChords)
+                        if (pc.row == r) rowChords.push_back(&pc);
+                    std::sort(rowChords.begin(), rowChords.end(),
+                              [](const PlacedChord* a, const PlacedChord* b)
+                              { return a->subFrac < b->subFrac; });
+
+                    const float minChordFontSize = juce::jmax(8.0f, fontSize * 0.3f);
+                    // lastBarrier: for LTR = right edge of prev chord;
+                    //              for RTL = left  edge of prev chord.
+                    float lastBarrier = -1.0f;
+
+                    for (int ci = 0; ci < (int)rowChords.size(); ++ci)
                     {
-                        if (pc.row != r) continue;
+                        const auto& pc = *rowChords[ci];
 
-                        juce::GlyphArrangement chordGlyphs;
-                        chordGlyphs.addLineOfText(chordFont, pc.chord.name, 0.0f, 0.0f);
-                        float textW = chordGlyphs.getBoundingBox(0, -1, true).getWidth();
-                        float chordW = textW + 8.0f;
-                        float chordX;
+                        // Measures the chord label width at a given font size (with padding).
+                        auto measureChordW = [&pc](float fs) -> float
+                        {
+                            juce::GlyphArrangement ga;
+                            ga.addLineOfText(juce::Font(juce::FontOptions(fs)), pc.chord.name, 0, 0);
+                            return ga.getBoundingBox(0, -1, true).getWidth() + 8.0f;
+                        };
 
                         if (rtl)
                         {
-                            float rightEdge = margin + contentWidth - pc.subFrac * rowTextWidth;
-                            chordX = rightEdge - chordW;
-                            if (lastChordRight >= 0.0f && chordX + chordW > lastChordRight)
-                                continue;
+                            // idealRightEdge: where this chord's right side should sit.
+                            float idealRightEdge = margin + contentWidth - pc.subFrac * rowTextWidth;
+                            // Clamp so we don't draw on top of the previously drawn chord.
+                            float actualRightEdge = (lastBarrier >= 0.0f)
+                                ? juce::jmin(idealRightEdge, lastBarrier)
+                                : idealRightEdge;
+
+                            // Space available up to the next chord's ideal right edge.
+                            float nextIdealRightEdge = (ci + 1 < (int)rowChords.size())
+                                ? (margin + contentWidth - rowChords[static_cast<size_t>(ci + 1)]->subFrac * rowTextWidth)
+                                : margin;
+                            float availableWidth = actualRightEdge - nextIdealRightEdge;
+                            if (availableWidth <= 0.0f) continue;
+
+                            float usedFontSize = fontSize * 0.75f;
+                            float chordW = measureChordW(usedFontSize);
+                            if (chordW > availableWidth)
+                            {
+                                usedFontSize = juce::jmax(minChordFontSize,
+                                                          usedFontSize * availableWidth / chordW);
+                                chordW = measureChordW(usedFontSize);
+                            }
+
+                            float chordX = actualRightEdge - chordW;
+                            bool isActive = (pc.chord.barPosition <= currentBarPos);
+                            g.setFont(juce::Font(juce::FontOptions(usedFontSize)));
+                            g.setColour((isActive ? juce::Colour(Theme::kChordColour)
+                                                  : juce::Colour(Theme::kChordDimColour))
+                                        .withAlpha(isActive ? alpha : alpha * 0.85f));
+                            g.drawText(pc.chord.name,
+                                       juce::Rectangle<float>(chordX, rowY, chordW, chordHeight),
+                                       juce::Justification::centredRight);
+                            lastBarrier = chordX;
                         }
                         else
                         {
-                            chordX = margin + pc.subFrac * rowTextWidth;
-                            if (chordX < lastChordRight)
-                                continue;
-                        }
+                            float idealX = margin + pc.subFrac * rowTextWidth;
+                            // Never draw over the previous chord.
+                            float startX = (lastBarrier >= 0.0f)
+                                ? juce::jmax(idealX, lastBarrier)
+                                : idealX;
 
-                        bool isActive = (pc.chord.barPosition <= currentBarPos);
-                        g.setColour((isActive ? juce::Colour(Theme::kChordColour)
-                                              : juce::Colour(Theme::kChordDimColour))
-                                    .withAlpha(isActive ? alpha : alpha * 0.85f));
+                            // Space available up to the next chord's ideal start.
+                            float nextIdealX = (ci + 1 < (int)rowChords.size())
+                                ? (margin + rowChords[static_cast<size_t>(ci + 1)]->subFrac * rowTextWidth)
+                                : (margin + contentWidth);
+                            float availableWidth = nextIdealX - startX;
+                            if (availableWidth <= 0.0f) continue;
 
-                        auto cb = juce::Rectangle<float>(chordX, rowY, chordW, chordHeight);
-                        if (rtl)
-                        {
-                            g.drawText(pc.chord.name, cb, juce::Justification::centredRight);
-                            lastChordRight = chordX;
-                        }
-                        else
-                        {
-                            g.drawText(pc.chord.name, cb, juce::Justification::centredLeft);
-                            lastChordRight = chordX + chordW;
+                            float usedFontSize = fontSize * 0.75f;
+                            float chordW = measureChordW(usedFontSize);
+                            if (chordW > availableWidth)
+                            {
+                                usedFontSize = juce::jmax(minChordFontSize,
+                                                          usedFontSize * availableWidth / chordW);
+                                chordW = measureChordW(usedFontSize);
+                            }
+
+                            bool isActive = (pc.chord.barPosition <= currentBarPos);
+                            g.setFont(juce::Font(juce::FontOptions(usedFontSize)));
+                            g.setColour((isActive ? juce::Colour(Theme::kChordColour)
+                                                  : juce::Colour(Theme::kChordDimColour))
+                                        .withAlpha(isActive ? alpha : alpha * 0.85f));
+                            g.drawText(pc.chord.name,
+                                       juce::Rectangle<float>(startX, rowY, chordW, chordHeight),
+                                       juce::Justification::centredLeft);
+                            lastBarrier = startX + chordW;
                         }
                     }
                 }
