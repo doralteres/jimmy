@@ -201,7 +201,20 @@ void JimmyEditor::timerCallback()
                     processorRef.songModel.getLyrics(),
                     processorRef.songModel.getChords(),
                     processorRef.songModel.getSections());
-                teleprompterView.setPosition(currentBar);
+
+                // If a SysEx song is loaded, compute relative bar position
+                if (processorRef.sysExSongActive.load(std::memory_order_relaxed) && sysExSongStartBar > 0.0)
+                {
+                    double relativeBar = currentBar - sysExSongStartBar + 1.0;
+                    teleprompterView.setPosition(relativeBar);
+                    displayCurrentSection = processorRef.songModel.getSectionAt(relativeBar);
+                    displayCurrentChord = processorRef.songModel.getChordAt(relativeBar);
+                }
+                else
+                {
+                    teleprompterView.setPosition(currentBar);
+                    displayCurrentChord = processorRef.songModel.getChordAt(currentBar);
+                }
             }
         }
         else
