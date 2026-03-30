@@ -102,12 +102,16 @@ public:
             {
                 songModel.setDefaultBarsPerLine(val);
                 defaultBarsEditor.setText(juce::String(songModel.getDefaultBarsPerLine(), 1), false);
+                rebuildBulkText();
             }
         };
         defaultBarsEditor.onFocusLost = [this] {
             double val = defaultBarsEditor.getText().getDoubleValue();
             if (val > 0.0)
+            {
                 songModel.setDefaultBarsPerLine(val);
+                rebuildBulkText();
+            }
             defaultBarsEditor.setText(juce::String(songModel.getDefaultBarsPerLine(), 1), false);
         };
         addAndMakeVisible(defaultBarsEditor);
@@ -168,38 +172,10 @@ public:
     void refreshFromModel()
     {
         cachedLyrics = songModel.getLyrics();
-        auto sections = songModel.getSections();
 
         defaultBarsEditor.setText(juce::String(songModel.getDefaultBarsPerLine(), 1), false);
 
-        // Rebuild bulk text with section markers and break directives
-        juce::String fullText;
-        int lastSectionIdx = -1;
-        for (const auto& line : cachedLyrics)
-        {
-            if (line.sectionIndex >= 0 && line.sectionIndex != lastSectionIdx
-                && line.sectionIndex < (int)sections.size())
-            {
-                lastSectionIdx = line.sectionIndex;
-                if (fullText.isNotEmpty())
-                    fullText += "\n";
-                fullText += "[" + sections[static_cast<size_t>(line.sectionIndex)].name + "]";
-            }
-            if (fullText.isNotEmpty())
-                fullText += "\n";
-
-            if (line.isBreak)
-            {
-                double breakLen = line.endBar - line.startBar;
-                fullText += "[break: " + juce::String(breakLen, 1) + "]";
-            }
-            else
-            {
-                fullText += line.text;
-            }
-        }
-        bulkEditor.setText(fullText, false);
-
+        rebuildBulkText();
         rebuildDisplayIndices();
         mappingTable.updateContent();
         mappingTable.repaint();
@@ -321,6 +297,7 @@ public:
                 }
 
                 songModel.setLyrics(cachedLyrics);
+                rebuildBulkText();
                 rebuildDisplayIndices();
                 mappingTable.updateContent();
                 mappingTable.repaint();
@@ -433,6 +410,44 @@ public:
     }
 
 private:
+    // Rebuild the bulk editor text from cachedLyrics, preserving
+    // [length: N] tags for lines whose bar-length differs from the default.
+    void rebuildBulkText()
+    {
+        auto sections = songModel.getSections();
+        double defaultBarsPerLine = songModel.getDefaultBarsPerLine();
+
+        juce::String fullText;
+        int lastSectionIdx = -1;
+        for (const auto& line : cachedLyrics)
+        {
+            if (line.sectionIndex >= 0 && line.sectionIndex != lastSectionIdx
+                && line.sectionIndex < (int)sections.size())
+            {
+                lastSectionIdx = line.sectionIndex;
+                if (fullText.isNotEmpty())
+                    fullText += "\n";
+                fullText += "[" + sections[static_cast<size_t>(line.sectionIndex)].name + "]";
+            }
+            if (fullText.isNotEmpty())
+                fullText += "\n";
+
+            if (line.isBreak)
+            {
+                double breakLen = line.endBar - line.startBar;
+                fullText += "[break: " + juce::String(breakLen, 1) + "]";
+            }
+            else
+            {
+                double len = line.endBar - line.startBar;
+                fullText += line.text;
+                if (std::abs(len - defaultBarsPerLine) > 0.01)
+                    fullText += " [length: " + juce::String(len, 1) + "]";
+            }
+        }
+        bulkEditor.setText(fullText, false);
+    }
+
     void updateEditorJustification()
     {
         auto text = bulkEditor.getText();
@@ -607,6 +622,7 @@ private:
 
         songModel.setLyrics(cachedLyrics);
         inlineEditor.reset();
+        rebuildBulkText();
         rebuildDisplayIndices();
         mappingTable.updateContent();
         mappingTable.repaint();
@@ -703,6 +719,7 @@ private:
         }
 
         songModel.setLyrics(cachedLyrics);
+        rebuildBulkText();
         rebuildDisplayIndices();
         mappingTable.updateContent();
         mappingTable.repaint();
