@@ -156,7 +156,13 @@ void JimmyEditor::timerCallback()
     if (importToastCountdown > 0)
         --importToastCountdown;
 
-    double currentBar = static_cast<double>(displayBarCount) + 1.0;
+    // Compute fractional bar position so sub-bar chords (e.g. at beat 3 of 4)
+    // are highlighted exactly when the playhead reaches them, not just at bar boundaries.
+    double ppqPerBar = displayTimeSigNum * (4.0 / juce::jmax(1, displayTimeSigDen));
+    double fracInBar = (ppqPerBar > 0.0)
+                           ? juce::jlimit(0.0, 0.9999, (displayPpq - displayBarStart) / ppqPerBar)
+                           : 0.0;
+    double currentBar = static_cast<double>(displayBarCount) + 1.0 + fracInBar;
     displayCurrentSection = processorRef.songModel.getSectionAt(currentBar);
 
     // Feed teleprompter with current data
