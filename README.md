@@ -1,6 +1,8 @@
 # Jimmy — Live Teleprompter for Cubase
 
-A VST3 instrument plugin that displays **lyrics and chords** as a live teleprompter, synced to your Cubase timeline.
+**Your lyrics & chords, right inside your DAW.**
+
+A VST3 instrument plugin that displays **lyrics and chords** as a live teleprompter, synced to your timeline.
 
 ![Jimmy live mode](assets/jimmy_live_mode.png)
 
