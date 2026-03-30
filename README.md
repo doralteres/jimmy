@@ -2,6 +2,11 @@
 
 A VST3 instrument plugin that displays **lyrics and chords** as a live teleprompter, synced to your Cubase timeline.
 
+![Jimmy live mode](assets/jimmy_live_mode.png)
+
+<a href='https://ko-fi.com/J3J41WYGJ4' target='_blank'><img height='36' style='border:0px;height:36px;' src='https://storage.ko-fi.com/cdn/kofi3.png?v=6' border='0' alt='Buy Me a Coffee at ko-fi.com' /></a>
+
+---
 ## Features
 
 - **Auto-scrolling teleprompter** — follows playback/recording position in real-time
@@ -54,5 +59,4 @@ SongModel: sections[], lyricLines[], chords[]
 ```
 
 ## License
-
-Personal use project.
+MIT License. See [LICENSE](LICENSE) for details.
