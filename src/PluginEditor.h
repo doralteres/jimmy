@@ -35,6 +35,7 @@ private:
     void showHelpPopup();
     void importMidiFile(const juce::File& file);
     void updateLiveSourceButton();
+    void updateTransposeLabel();
 
     JimmyProcessor& processorRef;
 
@@ -69,6 +70,9 @@ private:
     juce::TextButton zoomInBtn  { "+" };
     juce::TextButton zoomOutBtn { "-" };
     juce::TextButton helpBtn    { "?" };
+    juce::TextButton transposeUpBtn   { "T+" };
+    juce::TextButton transposeDownBtn { "T-" };
+    juce::Label      transposeLabel;
 
     // Cached display values (updated by timer, read by paint)
     double   displayBpm        = 120.0;

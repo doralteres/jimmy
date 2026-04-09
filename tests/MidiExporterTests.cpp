@@ -238,6 +238,97 @@ TEST(MidiExporter, WriteToFile)
 }
 
 // ══════════════════════════════════════════════════
+// Transpose meta event in export
+// ══════════════════════════════════════════════════
+
+TEST(MidiExporter, TransposeMetaAbsentWhenZero)
+{
+    SongModel model;
+    model.addLyricLine({ "Test", 1.0, 3.0, -1, false });
+    model.setTransposeOffset(0);
+
+    MidiExporter::ExportContext ctx { 120.0, 4, 4 };
+    auto data = MidiExporter::exportToSmf(model, ctx);
+
+    juce::MemoryInputStream mis(data.getData(), data.getSize(), false);
+    juce::MidiFile midiFile;
+    ASSERT_TRUE(midiFile.readFrom(mis, true));
+
+    const auto* seq = midiFile.getTrack(0);
+    ASSERT_NE(seq, nullptr);
+
+    bool foundTranspose = false;
+    for (int i = 0; i < seq->getNumEvents(); ++i)
+    {
+        const auto& msg = seq->getEventPointer(i)->message;
+        if (msg.isMetaEvent() && msg.getMetaEventType() == 1)
+            if (msg.getTextFromTextMetaEvent().startsWith("TRANSPOSE:"))
+                foundTranspose = true;
+    }
+    EXPECT_FALSE(foundTranspose);
+}
+
+TEST(MidiExporter, TransposeMetaPresentWhenNonZero)
+{
+    SongModel model;
+    model.addLyricLine({ "Test", 1.0, 3.0, -1, false });
+    model.setTransposeOffset(-3);
+
+    MidiExporter::ExportContext ctx { 120.0, 4, 4 };
+    auto data = MidiExporter::exportToSmf(model, ctx);
+
+    juce::MemoryInputStream mis(data.getData(), data.getSize(), false);
+    juce::MidiFile midiFile;
+    ASSERT_TRUE(midiFile.readFrom(mis, true));
+
+    const auto* seq = midiFile.getTrack(0);
+    ASSERT_NE(seq, nullptr);
+
+    juce::String transposeText;
+    for (int i = 0; i < seq->getNumEvents(); ++i)
+    {
+        const auto& msg = seq->getEventPointer(i)->message;
+        if (msg.isMetaEvent() && msg.getMetaEventType() == 1)
+        {
+            auto text = msg.getTextFromTextMetaEvent();
+            if (text.startsWith("TRANSPOSE:"))
+                transposeText = text;
+        }
+    }
+    EXPECT_EQ(transposeText, juce::String("TRANSPOSE:-3"));
+}
+
+TEST(MidiExporter, TransposeMetaPositiveValue)
+{
+    SongModel model;
+    model.addLyricLine({ "Test", 1.0, 3.0, -1, false });
+    model.setTransposeOffset(5);
+
+    MidiExporter::ExportContext ctx { 120.0, 4, 4 };
+    auto data = MidiExporter::exportToSmf(model, ctx);
+
+    juce::MemoryInputStream mis(data.getData(), data.getSize(), false);
+    juce::MidiFile midiFile;
+    ASSERT_TRUE(midiFile.readFrom(mis, true));
+
+    const auto* seq = midiFile.getTrack(0);
+    ASSERT_NE(seq, nullptr);
+
+    juce::String transposeText;
+    for (int i = 0; i < seq->getNumEvents(); ++i)
+    {
+        const auto& msg = seq->getEventPointer(i)->message;
+        if (msg.isMetaEvent() && msg.getMetaEventType() == 1)
+        {
+            auto text = msg.getTextFromTextMetaEvent();
+            if (text.startsWith("TRANSPOSE:"))
+                transposeText = text;
+        }
+    }
+    EXPECT_EQ(transposeText, juce::String("TRANSPOSE:5"));
+}
+
+// ══════════════════════════════════════════════════
 // SysEx encoding in exported MIDI
 // ══════════════════════════════════════════════════
 

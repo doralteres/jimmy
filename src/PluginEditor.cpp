@@ -2,6 +2,7 @@
 #include "Theme.h"
 #include "MidiImporter.h"
 #include "MidiExporter.h"
+#include "ChordParser.h"
 
 namespace
 {
@@ -67,6 +68,39 @@ JimmyEditor::JimmyEditor(JimmyProcessor& p)
     zoomOutBtn.onClick = [this] { teleprompterView.setFontSize(teleprompterView.getFontSize() - 4.0f); };
     addChildComponent(zoomOutBtn);
 
+    // Transpose buttons
+    auto transposeButtonStyle = [](juce::TextButton& btn)
+    {
+        btn.setColour(juce::TextButton::buttonColourId, juce::Colour(Theme::kSurfaceLight));
+        btn.setColour(juce::TextButton::textColourOnId, juce::Colour(Theme::kTextSecondary));
+        btn.setColour(juce::TextButton::textColourOffId, juce::Colour(Theme::kTextSecondary));
+    };
+    transposeButtonStyle(transposeDownBtn);
+    transposeButtonStyle(transposeUpBtn);
+
+    transposeDownBtn.onClick = [this]
+    {
+        int newOffset = juce::jlimit(-12, 12, processorRef.songModel.getTransposeOffset() - 1);
+        processorRef.songModel.setTransposeOffset(newOffset);
+        teleprompterView.setTransposeOffset(newOffset);
+        updateTransposeLabel();
+    };
+    transposeUpBtn.onClick = [this]
+    {
+        int newOffset = juce::jlimit(-12, 12, processorRef.songModel.getTransposeOffset() + 1);
+        processorRef.songModel.setTransposeOffset(newOffset);
+        teleprompterView.setTransposeOffset(newOffset);
+        updateTransposeLabel();
+    };
+    addChildComponent(transposeDownBtn);
+    addChildComponent(transposeUpBtn);
+
+    transposeLabel.setFont(juce::Font(juce::FontOptions(11.0f)));
+    transposeLabel.setColour(juce::Label::textColourId, juce::Colour(Theme::kTextSecondary));
+    transposeLabel.setJustificationType(juce::Justification::centred);
+    transposeLabel.setText("T: 0", juce::dontSendNotification);
+    addChildComponent(transposeLabel);
+
     // Help button — subtle circle
     helpBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(Theme::kSurfaceLight));
     helpBtn.setColour(juce::TextButton::textColourOnId, juce::Colour(Theme::kTextSecondary));
@@ -89,6 +123,10 @@ JimmyEditor::JimmyEditor(JimmyProcessor& p)
     };
     updateLiveSourceButton();
     addAndMakeVisible(liveSourceBtn);
+
+    // Sync transpose state from restored model (e.g. project reload)
+    updateTransposeLabel();
+    teleprompterView.setTransposeOffset(processorRef.songModel.getTransposeOffset());
 
     // Export drag zone (Edit mode)
     addChildComponent(exportDragZone);
@@ -168,6 +206,14 @@ void JimmyEditor::timerCallback()
     // Feed teleprompter with current data
     if (currentMode == Mode::Live)
     {
+        // Keep teleprompter transpose in sync with the model (e.g. after SysEx song load)
+        int currentTranspose = processorRef.songModel.getTransposeOffset();
+        if (teleprompterView.getTransposeOffset() != currentTranspose)
+        {
+            teleprompterView.setTransposeOffset(currentTranspose);
+            updateTransposeLabel();
+        }
+
         auto liveMode = processorRef.songModel.getLiveSourceMode();
 
         if (liveMode == LiveSourceMode::FromEditor)
@@ -238,6 +284,14 @@ void JimmyEditor::timerCallback()
                 teleprompterView.setPosition(currentBar);
             }
         }
+    }
+
+    // Apply transpose to the chord shown in the transport bar
+    if (displayCurrentChord.isNotEmpty())
+    {
+        int offset = processorRef.songModel.getTransposeOffset();
+        if (offset != 0)
+            displayCurrentChord = ChordParser::transposeChordName(displayCurrentChord, offset);
     }
 
     // Show/hide export drag zone based on whether there are lyrics
@@ -455,6 +509,9 @@ void JimmyEditor::resized()
         teleprompterView.setVisible(false);
         zoomInBtn.setVisible(false);
         zoomOutBtn.setVisible(false);
+        transposeDownBtn.setVisible(false);
+        transposeUpBtn.setVisible(false);
+        transposeLabel.setVisible(false);
 
         // Export drag zone at bottom of edit area
         bool hasLyrics = !processorRef.songModel.getLyrics().empty();
@@ -482,6 +539,15 @@ void JimmyEditor::resized()
         zoomInBtn.setVisible(true);
         zoomOutBtn.setBounds(toolbarInner.removeFromLeft(32).reduced(1));
         zoomInBtn.setBounds(toolbarInner.removeFromLeft(32).reduced(1));
+        toolbarInner.removeFromLeft(4);
+
+        // Transpose controls: T- [T:N] T+
+        transposeDownBtn.setVisible(true);
+        transposeUpBtn.setVisible(true);
+        transposeLabel.setVisible(true);
+        transposeDownBtn.setBounds(toolbarInner.removeFromLeft(28).reduced(1));
+        transposeLabel.setBounds(toolbarInner.removeFromLeft(36).reduced(1));
+        transposeUpBtn.setBounds(toolbarInner.removeFromLeft(28).reduced(1));
 
         teleprompterView.setVisible(true);
         teleprompterView.setBounds(area);
@@ -588,6 +654,7 @@ void JimmyEditor::importMidiFile(const juce::File& file)
                 processorRef.songModel.addChord(chord);
 
             processorRef.songModel.setDefaultBarsPerLine(result.defaultBarsPerLine);
+            processorRef.songModel.setTransposeOffset(result.transposeOffset);
 
             // Refresh the lyrics editor UI
             lyricsEditor.refreshFromModel();
@@ -676,6 +743,19 @@ void JimmyEditor::updateLiveSourceButton()
         liveSourceBtn.setColour(juce::TextButton::textColourOffId, juce::Colour(Theme::kBackground));
     }
     repaint();
+}
+
+void JimmyEditor::updateTransposeLabel()
+{
+    int offset = processorRef.songModel.getTransposeOffset();
+    juce::String labelText;
+    if (offset == 0)
+        labelText = "T: 0";
+    else if (offset > 0)
+        labelText = "T:+" + juce::String(offset);
+    else
+        labelText = "T:" + juce::String(offset);
+    transposeLabel.setText(labelText, juce::dontSendNotification);
 }
 
 // ── ExportDragZone ──

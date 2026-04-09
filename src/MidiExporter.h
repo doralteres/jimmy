@@ -37,6 +37,10 @@ public:
         addTimeSigMeta(seq, 0.0, ctx.timeSigNum, ctx.timeSigDen);
         addTextMeta(seq, 0.0, "DEFAULT_BPL:" + juce::String(defaultBPL));
 
+        int transposeOffset = model.getTransposeOffset();
+        if (transposeOffset != 0)
+            addTextMeta(seq, 0.0, "TRANSPOSE:" + juce::String(transposeOffset));
+
         // Per-line metadata (LINE_LEN overrides, BREAK markers)
         for (int i = 0; i < (int)lyrics.size(); ++i)
         {

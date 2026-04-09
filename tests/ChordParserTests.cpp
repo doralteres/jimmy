@@ -203,6 +203,113 @@ TEST(ChordParser, CMajorOverE)
     EXPECT_EQ(r.root, juce::String("C"));
 }
 
+// ── Transpose helpers ───────────────────────────────────────────────
+
+TEST(ChordParser, PitchClassFromNoteNameNaturals)
+{
+    EXPECT_EQ(ChordParser::pitchClassFromNoteName("C"),  0);
+    EXPECT_EQ(ChordParser::pitchClassFromNoteName("D"),  2);
+    EXPECT_EQ(ChordParser::pitchClassFromNoteName("E"),  4);
+    EXPECT_EQ(ChordParser::pitchClassFromNoteName("F"),  5);
+    EXPECT_EQ(ChordParser::pitchClassFromNoteName("G"),  7);
+    EXPECT_EQ(ChordParser::pitchClassFromNoteName("A"),  9);
+    EXPECT_EQ(ChordParser::pitchClassFromNoteName("B"),  11);
+}
+
+TEST(ChordParser, PitchClassFromNoteNameAccidentals)
+{
+    EXPECT_EQ(ChordParser::pitchClassFromNoteName("C#"), 1);
+    EXPECT_EQ(ChordParser::pitchClassFromNoteName("Db"), 1);
+    EXPECT_EQ(ChordParser::pitchClassFromNoteName("Eb"), 3);
+    EXPECT_EQ(ChordParser::pitchClassFromNoteName("F#"), 6);
+    EXPECT_EQ(ChordParser::pitchClassFromNoteName("Gb"), 6);
+    EXPECT_EQ(ChordParser::pitchClassFromNoteName("Ab"), 8);
+    EXPECT_EQ(ChordParser::pitchClassFromNoteName("Bb"), 10);
+    EXPECT_EQ(ChordParser::pitchClassFromNoteName("B"),  11);
+}
+
+TEST(ChordParser, PitchClassFromNoteNameUnknown)
+{
+    EXPECT_EQ(ChordParser::pitchClassFromNoteName(""),   -1);
+    EXPECT_EQ(ChordParser::pitchClassFromNoteName("X"),  -1);
+    EXPECT_EQ(ChordParser::pitchClassFromNoteName("123"), -1);
+}
+
+TEST(ChordParser, TransposeZeroSemitones)
+{
+    EXPECT_EQ(ChordParser::transposeChordName("C",   0), juce::String("C"));
+    EXPECT_EQ(ChordParser::transposeChordName("Am",  0), juce::String("Am"));
+    EXPECT_EQ(ChordParser::transposeChordName("F#m7",0), juce::String("F#m7"));
+}
+
+TEST(ChordParser, TransposeEmpty)
+{
+    EXPECT_EQ(ChordParser::transposeChordName("", 3), juce::String(""));
+}
+
+TEST(ChordParser, TransposeMajorUpTwo)
+{
+    EXPECT_EQ(ChordParser::transposeChordName("C",   2), juce::String("D"));
+    EXPECT_EQ(ChordParser::transposeChordName("D",   2), juce::String("E"));
+    EXPECT_EQ(ChordParser::transposeChordName("F",   2), juce::String("G"));
+    EXPECT_EQ(ChordParser::transposeChordName("Bb",  2), juce::String("C"));
+}
+
+TEST(ChordParser, TransposeMinorUpThree)
+{
+    EXPECT_EQ(ChordParser::transposeChordName("Am",  3), juce::String("Cm"));
+    EXPECT_EQ(ChordParser::transposeChordName("Fm",  3), juce::String("Abm"));
+}
+
+TEST(ChordParser, TransposeWithQualityPreserved)
+{
+    // Quality suffix should survive transposition unchanged.
+    EXPECT_EQ(ChordParser::transposeChordName("F#dim", -1), juce::String("Fdim"));
+    EXPECT_EQ(ChordParser::transposeChordName("Cmaj7",  4), juce::String("Emaj7"));
+    EXPECT_EQ(ChordParser::transposeChordName("Bbm7b5",  2), juce::String("Cm7b5"));
+}
+
+TEST(ChordParser, TransposeWrapAroundUp)
+{
+    // B + 1 semitone = C
+    EXPECT_EQ(ChordParser::transposeChordName("B",  1), juce::String("C"));
+    EXPECT_EQ(ChordParser::transposeChordName("Bm", 1), juce::String("Cm"));
+}
+
+TEST(ChordParser, TransposeWrapAroundDown)
+{
+    // C - 1 semitone = B
+    EXPECT_EQ(ChordParser::transposeChordName("C",  -1), juce::String("B"));
+    EXPECT_EQ(ChordParser::transposeChordName("Cm", -1), juce::String("Bm"));
+}
+
+TEST(ChordParser, TransposeFullOctave)
+{
+    // +12 semitones = same note
+    EXPECT_EQ(ChordParser::transposeChordName("C",   12), juce::String("C"));
+    EXPECT_EQ(ChordParser::transposeChordName("F#m", 12), juce::String("F#m"));
+    // -12 semitones = same note
+    EXPECT_EQ(ChordParser::transposeChordName("D",  -12), juce::String("D"));
+}
+
+TEST(ChordParser, TransposeSlashChordBothParts)
+{
+    // Am/E: root A +2 = B; bass E +2 = F#
+    EXPECT_EQ(ChordParser::transposeChordName("Am/E",  2), juce::String("Bm/F#"));
+    // C/E: root C -1 = B; bass E -1 = Eb
+    EXPECT_EQ(ChordParser::transposeChordName("C/E",  -1), juce::String("B/Eb"));
+    // G/B: +3 → Bb/D
+    EXPECT_EQ(ChordParser::transposeChordName("G/B",   3), juce::String("Bb/D"));
+}
+
+TEST(ChordParser, TransposeNegativeSemitones)
+{
+    // Dm -2 = Cm
+    EXPECT_EQ(ChordParser::transposeChordName("Dm", -2), juce::String("Cm"));
+    // G  -5 = D
+    EXPECT_EQ(ChordParser::transposeChordName("G",  -5), juce::String("D"));
+}
+
 TEST(ChordParser, CMajorOverG)
 {
     auto r = id({ 43, 60, 64, 67 }); // G(bass) C E G → root position bass = G

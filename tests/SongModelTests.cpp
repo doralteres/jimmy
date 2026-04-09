@@ -589,3 +589,80 @@ TEST(SongModel, SongToXmlHebrewRoundTrip)
     ASSERT_EQ(result.lyrics.size(), 1u);
     EXPECT_EQ(result.lyrics[0].text, hebrew);
 }
+
+// ── TransposeOffset ─────────────────────────────────────────────────
+
+TEST(SongModel, TransposeOffsetDefaultIsZero)
+{
+    SongModel m;
+    EXPECT_EQ(m.getTransposeOffset(), 0);
+}
+
+TEST(SongModel, TransposeOffsetSetGet)
+{
+    SongModel m;
+    m.setTransposeOffset(3);
+    EXPECT_EQ(m.getTransposeOffset(), 3);
+    m.setTransposeOffset(-5);
+    EXPECT_EQ(m.getTransposeOffset(), -5);
+    m.setTransposeOffset(0);
+    EXPECT_EQ(m.getTransposeOffset(), 0);
+}
+
+TEST(SongModel, TransposeOffsetClamped)
+{
+    SongModel m;
+    m.setTransposeOffset(100);
+    EXPECT_EQ(m.getTransposeOffset(), 12);
+    m.setTransposeOffset(-100);
+    EXPECT_EQ(m.getTransposeOffset(), -12);
+}
+
+TEST(SongModel, TransposeOffsetXmlRoundTrip)
+{
+    SongModel m;
+    m.setTransposeOffset(-3);
+    std::unique_ptr<juce::XmlElement> xml(m.toXml());
+
+    SongModel restored;
+    restored.fromXml(xml.get());
+    EXPECT_EQ(restored.getTransposeOffset(), -3);
+}
+
+TEST(SongModel, TransposeOffsetXmlOmittedWhenZero)
+{
+    // When offset is 0, the attribute should not be in the XML (backward compat).
+    SongModel m;
+    m.setTransposeOffset(0);
+    std::unique_ptr<juce::XmlElement> xml(m.toXml());
+    EXPECT_FALSE(xml->hasAttribute("transposeOffset"));
+}
+
+TEST(SongModel, TransposeOffsetXmlDefaultsToZero)
+{
+    // Older XML without transposeOffset attribute → should restore to 0.
+    juce::XmlElement root("JimmySong");
+    SongModel m;
+    m.setTransposeOffset(5);  // set something non-zero first
+    m.fromXml(&root);
+    EXPECT_EQ(m.getTransposeOffset(), 0);
+}
+
+TEST(SongModel, TransposeOffsetSongXmlRoundTrip)
+{
+    SongModel m;
+    m.setTransposeOffset(-4);
+    auto xmlString = m.songToXml();
+
+    auto result = SongModel::songFromXml(xmlString);
+    EXPECT_EQ(result.transposeOffset, -4);
+}
+
+TEST(SongModel, TransposeOffsetLoadSongData)
+{
+    SongModel m;
+    SongModel::SongData data;
+    data.transposeOffset = 7;
+    m.loadSongData(data);
+    EXPECT_EQ(m.getTransposeOffset(), 7);
+}

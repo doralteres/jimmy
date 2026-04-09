@@ -68,7 +68,9 @@ public:
         return bestResult;
     }
 
-private:
+    // ── Public helpers for transposition ──────────────────────────────
+
+    // Returns the note name string for a pitch class (0–11).
     static juce::String noteNameFromPitchClass(int pc)
     {
         static const char* names[] = { "C", "Db", "D", "Eb", "E", "F",
@@ -76,6 +78,101 @@ private:
         return names[pc % 12];
     }
 
+    // Returns the pitch class (0–11) for a root-note string.
+    // Accepts sharps ("C#", "F#") and flats ("Db", "Bb").
+    // Returns -1 if the string is not a recognised note name.
+    static int pitchClassFromNoteName(const juce::String& name)
+    {
+        static const std::pair<const char*, int> table[] = {
+            { "C#", 1 }, { "Db", 1 },
+            { "D#", 3 }, { "Eb", 3 },
+            { "F#", 6 }, { "Gb", 6 },
+            { "G#", 8 }, { "Ab", 8 },
+            { "A#", 10 }, { "Bb", 10 },
+            { "C",  0 }, { "D",  2 }, { "E",  4 }, { "F",  5 },
+            { "G",  7 }, { "A",  9 }, { "B",  11 },
+        };
+        for (const auto& entry : table)
+            if (name.startsWith(entry.first))
+                return entry.second;
+        return -1;
+    }
+
+    // Returns the number of characters consumed by the root-note prefix
+    // ("C" → 1, "C#" → 2, "Bb" → 2, etc.). Returns 0 if not recognised.
+    static int rootPrefixLength(const juce::String& name)
+    {
+        // Only consider 2-char prefix if the second char is '#' or 'b'
+        // (a proper accidental), so "Am" is NOT treated as a 2-char root.
+        if (name.length() >= 2)
+        {
+            juce::juce_wchar second = name[1];
+            if (second == '#' || second == 'b')
+            {
+                auto twoChar = name.substring(0, 2);
+                if (pitchClassFromNoteName(twoChar) >= 0)
+                    return 2;
+            }
+        }
+        if (name.length() >= 1)
+        {
+            auto oneChar = name.substring(0, 1);
+            if (pitchClassFromNoteName(oneChar) >= 0)
+                return 1;
+        }
+        return 0;
+    }
+
+    // Transposes a chord name string (e.g. "Am7", "C/E", "F#dim") by
+    // the given number of semitones (may be negative).  Slash bass notes
+    // are transposed independently.  Returns the original string unchanged
+    // if it cannot be parsed (empty, unknown root, etc.).
+    static juce::String transposeChordName(const juce::String& name, int semitones)
+    {
+        if (name.isEmpty() || semitones == 0)
+            return name;
+
+        // Helper lambda that shifts a root string by semitones.
+        auto transposeRoot = [&](const juce::String& rootStr) -> juce::String
+        {
+            int pc = pitchClassFromNoteName(rootStr);
+            if (pc < 0)
+                return rootStr;
+            int newPc = ((pc + semitones) % 12 + 12) % 12;
+            return noteNameFromPitchClass(newPc);
+        };
+
+        // Check for slash bass note first (e.g. "Am/E")
+        int slashPos = name.lastIndexOfChar('/');
+        juce::String mainPart = (slashPos > 0) ? name.substring(0, slashPos) : name;
+        juce::String bassPart = (slashPos > 0) ? name.substring(slashPos + 1) : juce::String();
+
+        // Transpose main chord root
+        int prefixLen = rootPrefixLength(mainPart);
+        if (prefixLen == 0)
+            return name;  // unrecognised root — leave unchanged
+
+        juce::String rootStr   = mainPart.substring(0, prefixLen);
+        juce::String qualityStr = mainPart.substring(prefixLen);
+        juce::String newMain   = transposeRoot(rootStr) + qualityStr;
+
+        // Transpose bass note (if present)
+        if (slashPos > 0)
+        {
+            int bassPrefixLen = rootPrefixLength(bassPart);
+            if (bassPrefixLen > 0)
+            {
+                juce::String bassRoot    = bassPart.substring(0, bassPrefixLen);
+                juce::String bassQuality = bassPart.substring(bassPrefixLen);
+                juce::String newBass     = transposeRoot(bassRoot) + bassQuality;
+                return newMain + "/" + newBass;
+            }
+        }
+
+        return newMain;
+    }
+
+private:
     // Returns intervals relative to root, sorted
     static std::vector<int> getIntervals(int root, const std::vector<int>& pitchClasses)
     {

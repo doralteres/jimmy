@@ -23,6 +23,7 @@ public:
         double bpm                = 120.0;
         int    timeSigNum         = 4;
         int    timeSigDen         = 4;
+        int    transposeOffset    = 0;
         bool   success            = false;
         juce::String errorMessage;
     };
@@ -182,6 +183,12 @@ public:
                         if (text.startsWith("BREAK:"))
                         {
                             parseBreakMeta(text, breakEntries);
+                            continue;
+                        }
+                        if (text.startsWith("TRANSPOSE:"))
+                        {
+                            result.transposeOffset = juce::jlimit(-12, 12,
+                                text.fromFirstOccurrenceOf("TRANSPOSE:", false, false).getIntValue());
                             continue;
                         }
                     }

@@ -3,6 +3,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "SongModel.h"
 #include "Theme.h"
+#include "ChordParser.h"
 
 // Auto-scrolling teleprompter view for live performance.
 // Displays lyrics with chords above, synced to the DAW timeline.
@@ -39,9 +40,41 @@ public:
 
     float getFontSize() const { return fontSize; }
 
+    void setTransposeOffset(int offset)
+    {
+        if (transposeOffset != offset)
+        {
+            transposeOffset = offset;
+            repaint();
+        }
+    }
+
+    int getTransposeOffset() const { return transposeOffset; }
+
     void paint(juce::Graphics& g) override
     {
         g.fillAll(juce::Colour(Theme::kBackground));
+
+        // ── Transpose / Capo banner ──────────────────────────────────────────
+        float bannerHeight = 0.0f;
+        if (transposeOffset != 0)
+        {
+            bannerHeight = 30.0f;
+            juce::String bannerText;
+            if (transposeOffset < 0)
+                bannerText = juce::String(juce::CharPointer_UTF8("\xf0\x9f\x8e\xb8 Capo on fret "))
+                             + juce::String(-transposeOffset);
+            else
+                bannerText = "Transpose: +" + juce::String(transposeOffset);
+
+            g.setColour(juce::Colour(Theme::kAccent).withAlpha(0.15f));
+            g.fillRect(0.0f, 0.0f, (float)getWidth(), bannerHeight);
+            g.setColour(juce::Colour(Theme::kAccent));
+            g.setFont(juce::Font(juce::FontOptions(13.0f)));
+            g.drawText(bannerText,
+                       juce::Rectangle<float>(12.0f, 0.0f, (float)getWidth() - 24.0f, bannerHeight),
+                       juce::Justification::centredLeft);
+        }
 
         if (currentLyrics.empty())
         {
@@ -56,7 +89,7 @@ public:
         float scrollDelta = targetScrollY - currentScrollY;
         currentScrollY += scrollDelta * 0.15f;  // smooth ease
 
-        float y = -currentScrollY;
+        float y = bannerHeight - currentScrollY;
         float lineHeight = fontSize * 1.4f;
         float chordHeight = fontSize * 0.8f;
         float sectionHeight = fontSize * 1.1f;
@@ -189,13 +222,15 @@ public:
 
                     for (int ci = 0; ci < (int)rowChords.size(); ++ci)
                     {
-                        const auto& pc = *rowChords[ci];
+                        const auto& pc = *rowChords[static_cast<size_t>(ci)];
 
                         // Measures the chord label width at a given font size (with padding).
-                        auto measureChordW = [&pc](float fs) -> float
+                        auto measureChordW = [&pc, this](float fs) -> float
                         {
                             juce::GlyphArrangement ga;
-                            ga.addLineOfText(juce::Font(juce::FontOptions(fs)), pc.chord.name, 0, 0);
+                            ga.addLineOfText(juce::Font(juce::FontOptions(fs)),
+                                             ChordParser::transposeChordName(pc.chord.name, transposeOffset),
+                                             0, 0);
                             return ga.getBoundingBox(0, -1, true).getWidth() + 8.0f;
                         };
 
@@ -230,7 +265,7 @@ public:
                             g.setColour((isActive ? juce::Colour(Theme::kChordColour)
                                                   : juce::Colour(Theme::kChordDimColour))
                                         .withAlpha(isActive ? alpha : alpha * 0.85f));
-                            g.drawText(pc.chord.name,
+                            g.drawText(ChordParser::transposeChordName(pc.chord.name, transposeOffset),
                                        juce::Rectangle<float>(chordX, rowY, chordW, chordHeight),
                                        juce::Justification::centredRight);
                             lastBarrier = chordX;
@@ -264,7 +299,7 @@ public:
                             g.setColour((isActive ? juce::Colour(Theme::kChordColour)
                                                   : juce::Colour(Theme::kChordDimColour))
                                         .withAlpha(isActive ? alpha : alpha * 0.85f));
-                            g.drawText(pc.chord.name,
+                            g.drawText(ChordParser::transposeChordName(pc.chord.name, transposeOffset),
                                        juce::Rectangle<float>(startX, rowY, chordW, chordHeight),
                                        juce::Justification::centredLeft);
                             lastBarrier = startX + chordW;
@@ -293,6 +328,7 @@ public:
 private:
     double currentBarPos = 1.0;
     float  fontSize = 28.0f;
+    int    transposeOffset = 0;
     float  currentScrollY = 0.0f;
     float  targetScrollY  = 0.0f;
 

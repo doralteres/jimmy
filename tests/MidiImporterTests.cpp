@@ -294,6 +294,60 @@ TEST(MidiImporter, RoundTripDefaultBarsPerLine)
 }
 
 // ══════════════════════════════════════════════════
+// Transpose offset round-trip
+// ══════════════════════════════════════════════════
+
+TEST(MidiImporter, RoundTripTransposeOffsetNegative)
+{
+    SongModel model;
+    model.addLyricLine({ "Test", 1.0, 3.0, -1, false });
+    model.setTransposeOffset(-3);
+
+    MidiExporter::ExportContext ctx { 120.0, 4, 4 };
+    auto file = exportToTempFile(model, ctx);
+
+    auto result = MidiImporter::importFull(file);
+    ASSERT_TRUE(result.success);
+    EXPECT_EQ(result.transposeOffset, -3);
+
+    file.deleteFile();
+}
+
+TEST(MidiImporter, RoundTripTransposeOffsetPositive)
+{
+    SongModel model;
+    model.addLyricLine({ "Test", 1.0, 3.0, -1, false });
+    model.setTransposeOffset(5);
+
+    MidiExporter::ExportContext ctx { 120.0, 4, 4 };
+    auto file = exportToTempFile(model, ctx);
+
+    auto result = MidiImporter::importFull(file);
+    ASSERT_TRUE(result.success);
+    EXPECT_EQ(result.transposeOffset, 5);
+
+    file.deleteFile();
+}
+
+TEST(MidiImporter, RoundTripTransposeOffsetZeroAbsent)
+{
+    // When transpose is 0, no TRANSPOSE: meta is written;
+    // import should return 0 (the struct's default).
+    SongModel model;
+    model.addLyricLine({ "Test", 1.0, 3.0, -1, false });
+    model.setTransposeOffset(0);
+
+    MidiExporter::ExportContext ctx { 120.0, 4, 4 };
+    auto file = exportToTempFile(model, ctx);
+
+    auto result = MidiImporter::importFull(file);
+    ASSERT_TRUE(result.success);
+    EXPECT_EQ(result.transposeOffset, 0);
+
+    file.deleteFile();
+}
+
+// ══════════════════════════════════════════════════
 // SysEx-encoded MIDI still detected as JimmyFull
 // ══════════════════════════════════════════════════
 

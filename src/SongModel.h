@@ -232,6 +232,19 @@ public:
         liveSourceMode = mode;
     }
 
+    // --- Transpose offset (display-only, does not modify stored chord names) ---
+    int getTransposeOffset() const
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        return transposeOffset;
+    }
+
+    void setTransposeOffset(int offset)
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        transposeOffset = juce::jlimit(-12, 12, offset);
+    }
+
     // --- Clip operations (multi-song setlist) ---
     void addClip(const SongClip& clip)
     {
@@ -283,6 +296,8 @@ public:
         root->setAttribute("version", 1);
         root->setAttribute("defaultBarsPerLine", defaultBarsPerLine);
         root->setAttribute("liveSource", liveSourceMode == LiveSourceMode::FromEditor ? "editor" : "live");
+        if (transposeOffset != 0)
+            root->setAttribute("transposeOffset", transposeOffset);
 
         auto* chordsXml = root->createNewChildElement("Chords");
         for (const auto& c : chords)
@@ -376,6 +391,7 @@ public:
         liveSourceMode = root->getStringAttribute("liveSource") == "editor"
                              ? LiveSourceMode::FromEditor
                              : LiveSourceMode::LiveInput;
+        transposeOffset = juce::jlimit(-12, 12, root->getIntAttribute("transposeOffset", 0));
 
         chords.clear();
         if (auto* chordsXml = root->getChildByName("Chords"))
@@ -483,6 +499,7 @@ private:
     std::vector<LyricLine> lyrics;
     double defaultBarsPerLine = 2.0;
     LiveSourceMode liveSourceMode = LiveSourceMode::LiveInput;
+    int transposeOffset = 0;
     std::vector<SongClip> clips;
 
     // ── Static helpers for standalone song XML (no clips/liveSource) ──
@@ -493,6 +510,7 @@ public:
         std::vector<Section>   sections;
         std::vector<Chord>     chords;
         double defaultBarsPerLine = 2.0;
+        int    transposeOffset    = 0;
     };
 
     // Serialize the flat model data (lyrics/chords/sections) to a standalone XML string.
@@ -503,6 +521,8 @@ public:
 
         juce::XmlElement root("JimmySongData");
         root.setAttribute("defaultBarsPerLine", defaultBarsPerLine);
+        if (transposeOffset != 0)
+            root.setAttribute("transposeOffset", transposeOffset);
 
         auto* chordsXml = root.createNewChildElement("Chords");
         for (const auto& c : chords)
@@ -547,6 +567,7 @@ public:
             return result;
 
         result.defaultBarsPerLine = xml->getDoubleAttribute("defaultBarsPerLine", 2.0);
+        result.transposeOffset = juce::jlimit(-12, 12, xml->getIntAttribute("transposeOffset", 0));
 
         if (auto* chordsXml = xml->getChildByName("Chords"))
         {
@@ -598,5 +619,6 @@ public:
         sections = data.sections;
         chords = data.chords;
         defaultBarsPerLine = data.defaultBarsPerLine;
+        transposeOffset = juce::jlimit(-12, 12, data.transposeOffset);
     }
 };
